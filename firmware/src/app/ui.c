@@ -2533,10 +2533,10 @@ static void draw_splash(uint32_t t0)
     const int tq = (int)(16.0f * fm_clampf((tt - 0.4f) / 0.8f, 0.0f, 1.0f) + 0.5f);   /* the name */
     const int32_t rise = (int32_t)(8.0f * (1.0f - sp_ease((tt - 0.4f) / 0.8f)));
     static const float LEN[2] = {0.9f, 0.8f}, PH[2] = {0.0f, 0.5f};
-    static char ver[40];                                             /* "niagara-drift 0.1" (the build's version) */
+    static char ver[40];                                             /* "dettifoss-deep 0.1" (the build's version) */
     int32_t y, half, b;
     if (!ver[0]) {
-        char *q = scopy(ver, "niagara-drift ");
+        char *q = scopy(ver, "dettifoss-deep ");
         const char *v = OM_VERSION;
         for (; *v && q < ver + sizeof ver - 1; v++)
             *q++ = (char)(*v >= 'A' && *v <= 'Z' ? *v + 32 : *v);
@@ -2562,8 +2562,8 @@ static void draw_splash(uint32_t t0)
             if (orr > ol)
                 cv_rect(ol, y, orr - ol, 1, SP_DARK_VIOLET);
         }
-        sp_text(14, 64 + rise, y0, &FONT_L, "NIAGARA", tq, SP_INK, SP_PALE);
-        sp_text(14, 98 + rise, y0, &FONT_L, "DRIFT", tq, SP_INK, SP_PALE);
+        sp_text(14, 64 + rise, y0, &FONT_L, "DETTIFOSS", tq, SP_INK, SP_PALE);
+        sp_text(14, 98 + rise, y0, &FONT_L, "DEEP", tq, SP_INK, SP_PALE);
         sp_text(14, 214, y0, &FONT_S, ver, tq, SP_INK, SP_PALE);
         if (lit < 16) {                                              /* from black, and back to it */
             uint32_t i, n = cv_w * cv_h;

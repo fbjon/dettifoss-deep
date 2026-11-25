@@ -416,7 +416,7 @@ def backups():
     bad = TMP / "bad.json"
     bad.write_text("{}")
     rc, out, err = cli(["--restore", str(bad), "--yes"], FakeFM1(image, identity="FM-1_800", stored={}))
-    ok(rc != 0 and "not a Niagara Drift backup" in err, "--restore of a file that isn't a backup: refused")
+    ok(rc != 0 and "not a backup file" in err, "--restore of a file that isn't a backup: refused")
 
 
 wire()

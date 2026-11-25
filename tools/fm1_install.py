@@ -11,11 +11,12 @@ the FM-1 restarts and the installed identity is checked.
 
   fm1_install.py PACKAGE.fwsc [--port NAME] [--yes] [--force] [--no-backup]
   fm1_install.py --info [--port NAME]
-  fm1_install.py --backup [FILE]       Niagara Drift: save the sound, the scenes and the settings to a file
+  fm1_install.py --backup [FILE]       save the sound, the scenes and the settings to a file
   fm1_install.py --restore FILE        ... and put them back (the FM-1 restarts)
 
-Before an install over Niagara Drift, a backup is saved first, in ~/niagara-drift-backups/ (--no-backup:
-not). Restore it after coming back from another firmware.
+Before an install over Dettifoss Deep or Niagara Drift, a backup is saved first, in ~/dettifoss-deep-backups/
+(--no-backup: not). Restore it after coming back from another firmware. The file format is Niagara Drift's, so
+either firmware's installer reads the other's backups (each firmware loads only its own saves from them).
 
 If the FM-1 is still in update mode (an earlier install was cut off), the
 install finishes the write. Needs mido with python-rtmidi.
@@ -228,7 +229,7 @@ OPTIONAL = {4, 5, 6, 7}            # firmware older than the Presets bank (v0.2)
                                    # no 5-7: none to keep from it, and an empty one isn't restored to it
 UNIT = {1}                         # the panel's calibration belongs to the unit: never in a backup, never restored
                                    # from one (Evan, 2026-10-30: as fm1-base's; a backup goes onto any FM-1)
-BACKUP_DIR = os.path.join(os.path.expanduser("~"), "niagara-drift-backups")
+BACKUP_DIR = os.path.join(os.path.expanduser("~"), "dettifoss-deep-backups")
 
 
 def nd_msg(cmd, body=b""):
@@ -375,7 +376,7 @@ def read_backup(path):
         objs = {int(k): base64.b64decode(v) for k, v in j["objects"].items()}
         crcs = {int(k): int(v) for k, v in j.get("crc32", {}).items()}   # (none before 2026-10-30)
     except (OSError, ValueError, KeyError, TypeError) as e:
-        raise InstallError("usage", f"{path}: not a Niagara Drift backup ({e})")
+        raise InstallError("usage", f"{path}: not a backup file ({e})")
     if any(k not in OBJECTS for k in objs):
         raise InstallError("usage", f"{path}: unknown objects in the backup")
     if crcs and (set(crcs) != set(objs) or any(zlib.crc32(v) != crcs[k] for k, v in objs.items())):
@@ -617,7 +618,7 @@ def run(a, backend, out, ask):
                 return 0
             objs = nd_backup(dev.link)
             if objs is None:
-                raise InstallError("model", "this firmware can't make a backup (Niagara Drift v0.2 or later can)")
+                raise InstallError("model", "this firmware can't make a backup (Dettifoss Deep and Niagara Drift v0.2 or later can)")
             path = a.backup or default_backup_path()
             backup_file(objs, dev.id, path)
             print(f"backup: {path}", file=out)
@@ -635,7 +636,7 @@ def run(a, backend, out, ask):
         dev.link.close()
         print("cancelled", file=out)
         return 1
-    if not dev.id.loader and not a.no_backup:  # Niagara Drift: its sound and scenes saved first
+    if not dev.id.loader and not a.no_backup:  # Dettifoss Deep or Niagara Drift: its sound and scenes saved first
         objs = nd_backup(dev.link)
         if objs is not None:
             path = default_backup_path()
@@ -664,7 +665,7 @@ def main(argv=None, backend=None, out=sys.stdout, ask=ask_tty):
     ap.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     ap.add_argument("--force", action="store_true", help="install a package without the Felucca loader marker")
     ap.add_argument("--backup", nargs="?", const="", metavar="FILE",
-                    help="save the sound, scenes and settings (Niagara Drift) to FILE (default ~/niagara-drift-backups/)")
+                    help="save the sound, scenes and settings to FILE (default ~/dettifoss-deep-backups/)")
     ap.add_argument("--restore", metavar="FILE", help="put a backup back onto the FM-1 (it restarts)")
     ap.add_argument("--no-backup", action="store_true", help="install without saving a backup first")
     a = ap.parse_args(argv)
