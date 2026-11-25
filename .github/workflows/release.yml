@@ -13,6 +13,9 @@ on:
     tags: ['v*']
 jobs:
   build:
+    # Off in this fork until it has its own name and package (the repository variable RELEASES set to "on"):
+    # a tag would otherwise publish a package named niagara-drift from here
+    if: vars.RELEASES == 'on'
     uses: zvenson/fm1-build/.github/workflows/build.yml@v1
     permissions:
       contents: write

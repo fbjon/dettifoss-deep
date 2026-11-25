@@ -1,8 +1,47 @@
-# Niagara Drift
+# Dettifoss Deep
 
-Drone-synth firmware for the M-VAVE FM-1 (GPL-3.0-only). The README is the player's manual; BUILDING.md
-says how to build. This file is for anyone working on the code with Claude, and for the PR review in
-GitHub Actions. Personal notes go in `CLAUDE.local.md` (ignored).
+A songwriting firmware for the M-VAVE FM-1 (GPL-3.0-only), forked from Niagara Drift
+(github.com/evanyerburgh/niagara-drift) at `887c3d7`. The fork is permanent: its own UI and save format on Niagara
+Drift's engine and platform. Until the new UI lands the README is still Niagara Drift's manual; BUILDING.md says how to
+build. This file is for anyone working on the code with Claude. Personal notes go in `CLAUDE.local.md` (ignored).
+
+## Commits and pull requests
+
+The repository is public and should read on its own.
+
+- **Messages:** a short subject in plain English (about 70 characters, no `feat:` prefixes); the body says why, and
+  what was measured. A message doesn't restate the code, as a comment doesn't.
+- **Before pushing:** prune and shorten the messages, and squash commits that belong together. Each commit builds
+  and passes the tests.
+- **Readable without the conversation.** A commit message or PR description makes sense to someone who has only
+  the repository: no links to conversations or sessions, and no names for plans that exist only in a chat ("the
+  new save format"). Work that is still to come is a GitHub issue, referenced by number; if it isn't worth an
+  issue, leave the sentence out.
+- **Trailers:** `Co-Authored-By: Claude <noreply@anthropic.com>` on commits Claude wrote; nothing else.
+- **Branches:** readable names (`live-page`), one topic each, merged with a merge commit and never force-pushed
+  once shared. Larger work is a stack of PRs that merge together.
+- **Upstream:** a fix taken from Niagara Drift is cherry-picked with `-x`, so its origin stays in the message.
+
+## Words
+
+Used the same way in the code, the screen and the docs.
+
+| Word | Meaning |
+| --- | --- |
+| Drone | The whole sustained sound. The engine's two voice groups ("drone I", "drone II" in older code) are layers |
+| Sound | Every timbre setting as it is now |
+| Preset | A factory sound to start from |
+| Scene | A stored sound, recalled with a glide |
+| Macro | A live knob that moves several settings |
+| Chord | A bass note and up to three tones over it; the bass is the root unless set apart |
+| Progression | A section's chords in order, each a step |
+| Section | A progression, with or without a scene |
+| Song | The order of sections, with repeats |
+| Motion | Recorded knob movement |
+| Take | One recording pass |
+| Project | Everything saved together |
+
+"Sequence" is kept for a future timed mode: don't use it for a progression.
 
 ## Commands
 
