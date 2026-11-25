@@ -2472,11 +2472,12 @@ void ui_init(void)
 }
 
 /* ------------------------------------------------------------- the start --- */
-/* As the web page: a red field, two thick bands (violet, and one that darkens what it crosses) drifting in from
- * the right and settling across the name, which turns pale pink where they cross it; it holds still for half a
- * second where it lands, then fades to the Drones page slowly. About 3.5 s (the last 1.3 s the fade); any button
- * or key ends it at once (and does what it does). The drones stay silent until PLAY. Not in the host
- * simulator's scenarios, which start at once (the browser emulator has it; OM_SPLASH shows it on the host). */
+/* Into the deep: on a navy that deepens downwards, thin lines of water fall from a ledge, quicker as they drop, and
+ * where they meet the deep they become four slow waves, the drone (its intervals: 1, 3/2, 2 and 5/4). The name
+ * fades in above. It holds still for half a second, then fades to the Drones page slowly. About 3.5 s (the last
+ * 1.3 s the fade); any button or key ends it at once (and does what it does). The drones stay silent until PLAY.
+ * Not in the host simulator's scenarios, which start at once (the browser emulator has it; OM_SPLASH shows it on
+ * the host). */
 #if defined(OM_HOST) && !defined(OM_WEB) && !defined(OM_SPLASH)
 #define SPLASH_MS 0u
 #else
@@ -2484,23 +2485,37 @@ void ui_init(void)
 #endif
 #define SPLASH_HOLD_AT 1700u                  /* where it lands: held still from here (Evan: half a second) */
 #define SPLASH_HOLD 500u
-#define SP_RED RGB(254, 0, 0)
-#define SP_VIOLET RGB(118, 5, 149)
-#define SP_DARK_RED RGB(58, 0, 0)             /* the dark band over the red (multiplied, as on the page) */
-#define SP_DARK_VIOLET RGB(27, 0, 49)         /* ... over the violet */
-#define SP_INK RGB(20, 0, 15)
-#define SP_PALE RGB(255, 214, 240)
-static int16_t sp_l[2][240], sp_r[2][240];    /* each band's edges, row by row */
+#define SP_TOP RGB(5, 7, 13)                  /* the navy, from above the ledge ... */
+#define SP_DEEP RGB(10, 31, 51)               /* ... to the deep */
+#define SP_LEDGE RGB(42, 58, 72)
+#define SP_WATER RGB(159, 220, 255)
+#define SP_NAME RGB(223, 242, 255)
+#define SP_NAME2 RGB(124, 199, 240)
+#define SP_VER RGB(111, 143, 168)
+#define SP_LIP 90                             /* the ledge's row, and the deep's surface */
+#define SP_SURF 166
+#define SP_LINES 26
 
-static int sp_in(int32_t x, int32_t y)
-{
-    return (x >= sp_l[0][y] && x < sp_r[0][y]) || (x >= sp_l[1][y] && x < sp_r[1][y]);
-}
 static float sp_ease(float x) { x = fm_clampf(x, 0.0f, 1.0f); return 1.0f - (1.0f - x) * (1.0f - x); }
 
-/* text whose colour depends on where it is: near-black on the red, pale over a band; q of 16 faded in */
-static void sp_text(int32_t x, int32_t y, int32_t y0, const felucca_font_t *f, const char *s, int q, uint16_t out_c,
-                    uint16_t in_c)
+static uint16_t sp_bg(int32_t y)               /* the navy at a row: deeper below the ledge, faster at first */
+{
+    int32_t f = y <= 60 ? 0 : (y - 60) * 64 / 180;
+    return blend(SP_TOP, SP_DEEP, (int)((f * f / 64 + f) / 2), 64);
+}
+
+static void sp_px(int32_t x, int32_t y, int32_t y0, uint16_t c, int q)   /* q of 16 over what is there */
+{
+    int32_t py = y - y0;
+    uint16_t *p;
+    if ((uint32_t)x >= cv_w || py < 0 || py >= (int32_t)cv_h || q <= 0)
+        return;
+    p = &cv_px[(uint32_t)py * cv_w + (uint32_t)x];
+    *p = swap16(blend(swap16(*p), c, q > 16 ? 16 : q, 16));
+}
+
+/* text in one colour, q of 16 faded in */
+static void sp_text(int32_t x, int32_t y, int32_t y0, const felucca_font_t *f, const char *s, int q, uint16_t c)
 {
     for (; *s; s++) {
         uint32_t gi = glyph(f, (uint8_t)*s), gx, gy, w = f->bw[gi], bpr = (w + 1u) / 2u;
@@ -2508,15 +2523,10 @@ static void sp_text(int32_t x, int32_t y, int32_t y0, const felucca_font_t *f, c
         for (gy = 0; gy < f->h; gy++)
             for (gx = 0; gx < w; gx++) {
                 uint32_t a = gd[gy * bpr + gx / 2u];
-                int32_t px = x - f->pad + (int32_t)gx, sy = y + (int32_t)gy, py = sy - y0;
                 a = (gx & 1u) ? (a & 15u) : (a >> 4);
                 a = a * (uint32_t)q / 16u;
-                if (!a || (uint32_t)px >= cv_w || py < 0 || py >= (int32_t)cv_h || sy < 0 || sy >= 240)
-                    continue;
-                {
-                    uint16_t c = sp_in(px, sy) ? in_c : out_c, bg = swap16(cv_px[(uint32_t)py * cv_w + (uint32_t)px]);
-                    cv_px[(uint32_t)py * cv_w + (uint32_t)px] = swap16(blend(bg, c, (int)a, 15));
-                }
+                if (a)
+                    sp_px(x - f->pad + (int32_t)gx, y + (int32_t)gy, y0, c, (int)((a * 16u + 7u) / 15u));
             }
         x += f->adv[gi];
     }
@@ -2527,14 +2537,19 @@ static void draw_splash(uint32_t t0)
     /* its own time stops for the hold: everything after it is as before, half a second later */
     const uint32_t t = t0 < SPLASH_HOLD_AT ? t0 : t0 < SPLASH_HOLD_AT + SPLASH_HOLD ? SPLASH_HOLD_AT : t0 - SPLASH_HOLD;
     const float tt = (float)t * 0.001f;
-    const float in = sp_ease(tt / 1.4f), fade = fm_clampf(tt / 0.4f, 0.0f, 1.0f),
+    const float fade = fm_clampf(tt / 0.4f, 0.0f, 1.0f),
                 out = fm_clampf(((float)t - (float)(SPLASH_MS - SPLASH_HOLD) + 1300.0f) / 1300.0f, 0.0f, 1.0f);
     const int lit = (int)(16.0f * fade * (1.0f - out) + 0.5f);        /* the whole picture, from black and back */
     const int tq = (int)(16.0f * fm_clampf((tt - 0.4f) / 0.8f, 0.0f, 1.0f) + 0.5f);   /* the name */
     const int32_t rise = (int32_t)(8.0f * (1.0f - sp_ease((tt - 0.4f) / 0.8f)));
-    static const float LEN[2] = {0.9f, 0.8f}, PH[2] = {0.0f, 0.5f};
+    const int ledge = (int)(16.0f * sp_ease(tt / 0.4f));
+    const int32_t front = SP_LIP + (int32_t)((float)(SP_SURF - SP_LIP) * sp_ease(tt / 0.7f));
+    const float amp = sp_ease((tt - 0.55f) / 1.1f), show = fm_clampf(amp * 1.5f, 0.0f, 1.0f);
+    static const float RATIO[4] = {1.0f, 1.5f, 2.0f, 1.25f};
+    static const uint16_t WAVE[4] = {RGB(124, 199, 240), RGB(90, 166, 216), RGB(63, 134, 189), RGB(43, 103, 151)};
+    static const uint8_t WAVE_Y[4] = {176, 186, 195, 203};
     static char ver[40];                                             /* "dettifoss-deep 0.1" (the build's version) */
-    int32_t y, half, b;
+    int32_t y, x, i, k, half;
     if (!ver[0]) {
         char *q = scopy(ver, "dettifoss-deep ");
         const char *v = OM_VERSION;
@@ -2542,33 +2557,43 @@ static void draw_splash(uint32_t t0)
             *q++ = (char)(*v >= 'A' && *v <= 'Z' ? *v + 32 : *v);
         *q = 0;
     }
-    for (b = 0; b < 2; b++)                                          /* the bands: from off the right, settling */
-        for (y = 0; y < 240; y++) {
-            float a = 6.2831853f * (float)y / (240.0f * LEN[b]) + PH[b] + tt * 0.6f;
-            float cx = 240.0f * (1.15f - 0.6f * in + 0.12f * fm_sinf(a));
-            float hw = 240.0f * 0.065f * (1.0f + 0.2f * fm_sinf(a * 1.4f + PH[b]));
-            sp_l[b][y] = (int16_t)fm_clampf(cx - hw, -1.0f, 241.0f);
-            sp_r[b][y] = (int16_t)fm_clampf(cx + hw, -1.0f, 241.0f);
-        }
     for (half = 0; half < 2; half++) {                               /* the screen in two halves (the canvas) */
         const int32_t y0 = half * 120;
         cv_begin(240, 120, K_BG);
-        for (y = 0; y < 120; y++) {
-            int32_t sy = y0 + y, ol = sp_l[0][sy] > sp_l[1][sy] ? sp_l[0][sy] : sp_l[1][sy],
-                    orr = sp_r[0][sy] < sp_r[1][sy] ? sp_r[0][sy] : sp_r[1][sy];
-            cv_rect(0, y, 240, 1, SP_RED);
-            cv_rect(sp_l[0][sy], y, sp_r[0][sy] - sp_l[0][sy], 1, SP_VIOLET);
-            cv_rect(sp_l[1][sy], y, sp_r[1][sy] - sp_l[1][sy], 1, SP_DARK_RED);
-            if (orr > ol)
-                cv_rect(ol, y, orr - ol, 1, SP_DARK_VIOLET);
+        for (y = 0; y < 120; y++)
+            cv_rect(0, y, 240, 1, sp_bg(y0 + y));
+        for (y = SP_LIP - 2; y < SP_LIP && !half; y++)               /* the ledge */
+            for (x = 10; x < 230; x++)
+                sp_px(x, y, y0, SP_LEDGE, ledge);
+        for (i = 0; i < SP_LINES; i++) {                             /* the water: dashes falling, quicker below */
+            const int32_t lx = 18 + i * 8 + (i * 5) % 3 - 1, dash = 10 + (i * 7) % 16;
+            const float ph = (float)((i * 73) % 200), speed = 110.0f + (float)((i * 37) % 60);
+            for (y = SP_LIP > y0 ? SP_LIP : y0; y < front && y < y0 + 120; y++) {
+                const float v = (float)y + ph - tt * speed * (1.0f + (float)(y - SP_LIP) * (1.0f / 60.0f));
+                if (((int32_t)(v + 4096.0f) % (dash + 8)) < dash)
+                    sp_px(lx, y, y0, SP_WATER, 6 + 10 * (y - SP_LIP) / (SP_SURF - SP_LIP));
+            }
         }
-        sp_text(14, 64 + rise, y0, &FONT_L, "DETTIFOSS", tq, SP_INK, SP_PALE);
-        sp_text(14, 98 + rise, y0, &FONT_L, "DEEP", tq, SP_INK, SP_PALE);
-        sp_text(14, 214, y0, &FONT_S, ver, tq, SP_INK, SP_PALE);
+        if (half && show > 0.0f)                                     /* the deep: the drone, four waves (below) */
+            for (k = 0; k < 4; k++)
+                for (x = 0; x < 240; x++) {
+                    const float wob = 1.0f + 0.3f * fm_sinf((float)x * (1.0f / 37.0f) + tt * 1.3f + (float)k),
+                                d = 1.0f - (float)(x > 120 ? x - 120 : 120 - x) * (1.0f / 125.0f),
+                                a = show * fm_clampf(d * 3.0f, 0.0f, 1.0f);
+                    const int32_t wy = (int32_t)((float)WAVE_Y[k] + 0.5f +
+                                                 amp * 5.0f * wob *
+                                                     fm_sinf((float)x * 0.045f * RATIO[k] +
+                                                             tt * (1.8f + 0.4f * (float)k) + (float)k * 1.7f));
+                    sp_px(x, wy, y0, WAVE[k], (int)(16.0f * a + 0.5f));
+                    sp_px(x, wy + 1, y0, WAVE[k], (int)(6.0f * a + 0.5f));
+                }
+        sp_text(14, 16 + rise, y0, &FONT_L, "DETTIFOSS", tq, SP_NAME);
+        sp_text(14, 48 + rise, y0, &FONT_L, "DEEP", tq, SP_NAME2);
+        sp_text(14, 214, y0, &FONT_S, ver, tq, SP_VER);
         if (lit < 16) {                                              /* from black, and back to it */
-            uint32_t i, n = cv_w * cv_h;
-            for (i = 0; i < n; i++)
-                cv_px[i] = swap16(blend(K_BG, swap16(cv_px[i]), lit, 16));
+            uint32_t n = cv_w * cv_h, j;
+            for (j = 0; j < n; j++)
+                cv_px[j] = swap16(blend(K_BG, swap16(cv_px[j]), lit, 16));
         }
         cv_blit(0, (uint32_t)y0);
     }
