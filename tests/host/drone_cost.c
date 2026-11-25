@@ -129,6 +129,7 @@ static const char *const names[] = {
     "the same, Cross-mod on the output (Snarl)",
     "the same, the reverb Shimmer (v0.3)",
     "the same, under a chord, gliding to it",
+    "the same, the live macros up (Motion breathing)",
 };
 #define NCASES ((int)(sizeof names / sizeof names[0]))
 
@@ -151,6 +152,18 @@ static void setup(int c)
         dr_chord(0, 4500, 700, 1);
         dr_chord(1, 6000, 400, 1);
         dr_chord_go(1, 0);
+        break;
+    case 10:                                                        /* the live macros: their moves again every block
+                                                                     * while Motion breathes */
+        drone(1, 2, 2);
+        dr_set(P_REV_TYPE, 4);
+        dr_chord(0, 4500, 700, 1);
+        dr_chord(1, 6000, 400, 1);
+        dr_chord_go(1, 0);
+        dr_set(P_DARK, 60);
+        dr_set(P_THICK, 100);
+        dr_set(P_MOTION, 100);
+        dr_set(P_SPACE, 100);
         break;
     }
 }

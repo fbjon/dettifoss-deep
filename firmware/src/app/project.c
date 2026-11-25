@@ -391,9 +391,6 @@ static void convert(int16_t *v, uint32_t from)
         int t = v[P_DLY_TYPE];
         v[P_DLY_TYPE] = (int16_t)(t == 0 ? 3 : t == 3 ? 0 : t);
     }
-    if (from == 24u)                            /* the swells shorter (2-4 s, Evan 2026-10-18): to the new defaults */
-        for (g = P_GR_0; g <= P_GR_3; g++)
-            v[g] = dr_param_info(g)->def;
     if (from <= 37u)                            /* the Swell's Shape turned round (Evan, 2026-10-30): the ramp to the
                                                  * right now, the gate to the left; the same sound */
         v[P_PULSE_SHAPE] = (int16_t)-v[P_PULSE_SHAPE];
@@ -431,6 +428,9 @@ static void convert(int16_t *v, uint32_t from)
                     n = t >= 10.0f ? 100.0f - t : 90.0f + fm_log2f(hz * 10.0f) * (1.0f / 0.152438f);
         v[P_LFO_RATE] = (int16_t)fm_clampf(n + 0.5f, 0.0f, 152.0f);
     }
+    if (from <= 44u)                            /* the live macros in the slots of the gesture keys' old times: at rest */
+        for (g = P_DARK; g <= P_SPACE; g++)
+            v[g] = 0;
     if (from <= 43u)                            /* the LFO on X-WAVE and the resonance turns at their ends now, and
                                                  * its depth 100 is their whole range (Evan, 2026-11-08): each sound
                                                  * keeps the range it reached */
@@ -676,8 +676,9 @@ static void bank_load(int b)                   /* B (1) or C (2): from its objec
     bank_fmt[b - 1] = ld.b.format;
     if (ld.b.format == PROJ_FORMAT) {
         *k = ld.b;
-    } else if (ld.b.format >= 41u && ld.b.format <= 43u) {   /* 41-43: as now, the LFO rate on an old scale (41,
-                                                                * 42) or the X-WAVE and resonance depths (43) */
+    } else if (ld.b.format >= 41u && ld.b.format <= 44u) {   /* 41-44: as now, the LFO rate on an old scale (41,
+                                                                * 42), the X-WAVE and resonance depths (43), the
+                                                                * live macros' slots (44) */
         *k = ld.b;
         for (i = 0; i < NSCENES; i++)
             convert(k->scene[i], ld.b.format);
@@ -751,9 +752,9 @@ static void bank_load(int b)                   /* B (1) or C (2): from its objec
             k->used &= (uint16_t)~(1u << i);
 }
 
-/* D, E or F (j 0..2) from its object: new in format 43, read in 43 (converted) and 44 (a later format converts it
- * here too, as bank_load does B and C) */
-_Static_assert(PROJ_FORMAT == 44, "bankx_load reads D-F only in formats 43 and 44: add their conversion (as bank_load "
+/* D, E or F (j 0..2) from its object: new in format 43, read in 43 and 44 (converted) and 45 (a later format converts
+ * it here too, as bank_load does B and C) */
+_Static_assert(PROJ_FORMAT == 45, "bankx_load reads D-F only in formats 43 to 45: add their conversion (as bank_load "
                                   "does B and C) before raising PROJ_FORMAT, or everyone's D, E and F are dropped");
 static void bankx_load(int j)
 {
@@ -762,10 +763,10 @@ static void bankx_load(int j)
     bankx_blank(k);
     memset(ld.raw, 0, sizeof ld.raw);
     if (plat_store_load(BANKX_OBJ[j], ld.raw, sizeof ld.raw) < (int)sizeof *k || ld.x.magic != BANK_MAGIC ||
-        (ld.x.format != PROJ_FORMAT && ld.x.format != 43u))
+        (ld.x.format != PROJ_FORMAT && ld.x.format != 43u && ld.x.format != 44u))
         return;
     *k = ld.x;
-    if (k->format != PROJ_FORMAT) {            /* 43: the X-WAVE and resonance depths */
+    if (k->format != PROJ_FORMAT) {            /* 43: the X-WAVE and resonance depths; 44: the live macros' slots */
         for (i = 0; i < NPLAY; i++)
             convert(k->scene[i], k->format);
         k->format = PROJ_FORMAT;
@@ -786,7 +787,7 @@ static const int16_t *old_scene(int n, uint32_t *from)   /* scene n of the bank 
 {
     uint32_t f = ld.b.format;
     *from = f;
-    if (f == PROJ_FORMAT || (f >= 41u && f <= 43u)) return ld.b.scene[n];
+    if (f == PROJ_FORMAT || (f >= 41u && f <= 44u)) return ld.b.scene[n];
     if (f == 39u || f == 40u) return ld.b40.scene[n];
     if (f == 37u || f == 38u) return ld.b38.scene[n];
     if (f == 36u) return ld.b36.scene[n];
@@ -935,8 +936,8 @@ int project_load(void)
     }
     if (from == PROJ_FORMAT) {
         proj = ld.p;
-    } else if (from >= 41u && from <= 43u) {   /* 41-43: as now, the LFO rate on an old scale (41, 42) or the
-                                                * X-WAVE and resonance depths (43) */
+    } else if (from >= 41u && from <= 44u) {   /* 41-44: as now, the LFO rate on an old scale (41, 42), the
+                                                * X-WAVE and resonance depths (43), the live macros' slots (44) */
         proj = ld.p;
         convert(proj.par, from);
         for (i = 0; i < NSCENES; i++)

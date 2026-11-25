@@ -131,8 +131,17 @@ enum {
                                      * detent 10, with SEL held 1) */
     P_WSCALE,                       /* Wander's scale (DR_WSCALE_NAME), 0 minor pentatonic (Moves) */
     P_GD_0, P_GD_1, P_GD_2, P_GD_3,      /* unused since 2026-10-18 (each key's depth: now DR_GEST_DEPTH) */
-    P_GR_0, P_GR_1, P_GR_2, P_GR_3,      /* unused since 2026-10-18 (each key's time: now DR_GEST_TIME) */
-    P_GL_0, P_GL_1, P_GL_2, P_GL_3,      /* ... latched at, 0..100 (0: not latched) */
+    /* THE LIVE MACROS, -100..100, 0 the sound as set; offsets as the macros' (in the slots of the gesture keys'
+     * times, unused since 2026-10-18, so a sound takes no more room) */
+    P_DARK,                         /* DARK-BRIGHT: the filters closed (down to 2.5 octaves) or opened, the waves softer or
+                                     * brighter, the sub up toward dark (made up as Age is), the reverb's tail darker
+                                     * or open */
+    P_THICK,                        /* THICKNESS: down, the voices go one by one (drone II's partner, drone II, drone I's
+                                     * partner) to the bass alone; up, the partners on, detuned, wider, a little drive */
+    P_MOTION,                       /* MOTION: down, still (Movement, Drift, the Swell's depth to 0); up, Movement and Drift
+                                     * up, the filters breathing slowly */
+    P_SPACE,                        /* SPACE: down, dry and close; up, the reverb and the delay open, longer */
+    P_GL_0, P_GL_1, P_GL_2, P_GL_3,      /* the gesture keys D5-G5 latched at, 0..100 (0: not latched) */
     /* THE EFFECTS (v0.2, ChoralRoot's design) */
     P_DLY_TYPE,                     /* the delay's type: Clean, Wide, Ping-pong, Tape, Grain, Self (DR_DLY_NAME) */
     P_REV_LEN,                      /* the reverb's LENGTH: 0..99 = 0.3 .. 40 s (its decay time), 100 Inf (a freeze) */

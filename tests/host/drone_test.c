@@ -2000,6 +2000,86 @@ int main(void)
         run(2);
     }
 
+    {   /* the live macros: offsets on the sound, 0 the sound as set; measured over a held chord */
+        static const int LP[4] = {P_DARK, P_THICK, P_MOTION, P_SPACE};
+        static const char *const LN[4] = {"Dark-Bright", "Thickness", "Motion", "Space"};
+        float db[4][3], zc[4][3];
+        int16_t was[DR_NPARAMS];
+        int m, k, i, same = 1, c0, c1;
+        dry_init();
+        dr_set(P_PULSE, 0);
+        dr_set(P_DRIFT, 0);
+        dr_play(1);
+        dr_chord(0, 4800, 700, 1);                  /* C3 G3, E4 B4 */
+        dr_chord(1, 6400, 700, 1);
+        dr_chord_go(1, 100);
+        run(secs(3.0f));
+        for (i = 0; i < DR_NPARAMS; i++)
+            was[i] = (int16_t)dr_heard(i);
+        c0 = was[DR_GP(0, GP_CUTOFF)];
+        c1 = was[DR_GP(1, GP_CUTOFF)];
+        for (m = 0; m < 4; m++)
+            for (k = 0; k < 3; k++) {
+                dr_set(LP[m], k * 100 - 100);
+                run(secs(1.5f));
+                run(secs(1.0f));
+                db[m][k] = 20.0f * log10f(rms());
+                zc[m][k] = (float)upcross / (float)frames * DR_SR;
+                if (k == 1)
+                    for (i = 0; i < DR_NPARAMS; i++)
+                        same &= dr_heard(i) == was[i] || i == LP[m];
+                if (k == 2)
+                    dr_set(LP[m], 0);
+            }
+        for (m = 0; m < 4; m++)
+            printf("  %-11s -100 / 0 / 100: %5.1f %5.1f %5.1f dB, %4.0f %4.0f %4.0f crossings a second\n", LN[m],
+                   (double)db[m][0], (double)db[m][1], (double)db[m][2], (double)zc[m][0], (double)zc[m][1], (double)zc[m][2]);
+        check("live macros at 0: the sound as set", same);
+        dr_set(P_DARK, 100);
+        run(2);
+        check("Dark-Bright 100: the cutoffs 250 up", dr_heard(DR_GP(0, GP_CUTOFF)) == c0 + 250);
+        run(secs(0.5f));
+        k = (int)upcross;
+        dr_set(P_DARK, -100);
+        run(2);
+        check("Dark-Bright -100: the cutoffs 250 down", dr_heard(DR_GP(1, GP_CUTOFF)) == c1 - 250);
+        run(secs(0.5f));
+        check("Dark-Bright: brighter up than down (more zero crossings)", (int)upcross < k);
+        dr_set(P_DARK, 0);
+        dr_set(DR_GP(0, GP_PARTNER), 0);
+        dr_chord_go(0, 100);
+        dr_set(P_THICK, 100);
+        run(secs(0.5f));
+        check("Thickness 100: the partners on, beating", dr_heard(DR_GP(0, GP_PARTNER)) == 1 && dr_heard(DR_GP(1, GP_DETUNE)) >= 60);
+        dr_set(P_THICK, -100);
+        run(secs(3.0f));                            /* (the meter's own fall) */
+        check("Thickness -100: drone II gone, the bass alone", dr_level[1] < 0.001f && dr_level[0] > 0.01f);
+        dr_set(P_THICK, 0);
+        dr_set(DR_GP(0, GP_PARTNER), 1);
+        dr_set(P_MOTION, -100);
+        run(2);
+        check("Motion -100: still (Movement, Drift 0)", dr_heard(P_MOVE) == 0 && dr_heard(P_DRIFT) == 0);
+        dr_set(P_MOTION, 100);
+        run(2);
+        check("Motion 100: Movement to the top", dr_heard(P_MOVE) == 100 && dr_heard(P_DRIFT) == 70);
+        dr_set(P_MOTION, 0);
+        dr_set(P_SPACE, -100);
+        run(2);
+        check("Space -100: dry", dr_heard(P_REV_MIX) == 0 && dr_heard(P_DLY_MIX) == 0);
+        dr_set(P_SPACE, 100);
+        run(2);
+        check("Space 100: the reverb open", dr_heard(P_REV_MIX) == 65 && dr_heard(P_REV_LEN) == 85);
+        dr_set(P_REV_MIX, 90);                      /* a value turned under a macro: the macro moves from it */
+        run(2);
+        check("Space 100, Rev mix turned past its aim: as turned", dr_heard(P_REV_MIX) == 90);
+        dr_set(P_SPACE, 0);
+        dr_set(P_REV_MIX, 0);
+        run(2);
+        check("Space back to 0: the sound as set", dr_heard(P_REV_MIX) == 0 && dr_heard(P_REV_LEN) == dr_param_info(P_REV_LEN)->def);
+        dr_play(0);
+        run(secs(4.0f));
+    }
+
     check("output finite throughout", finite_ok);
     printf(bad ? "drone: %d FAILED\n" : "drone: all ok\n", bad);
     return bad ? 1 : 0;

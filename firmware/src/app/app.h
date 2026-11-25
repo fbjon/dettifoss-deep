@@ -11,7 +11,9 @@
 #define OM_VERSION "DEV"
 #endif
 #define PROJ_MAGIC 0x31504444u           /* "DDP1": Niagara Drift's "DRN1" saves, in the same sectors, aren't read */
-#define PROJ_FORMAT 44u                  /* 44: the LFO's depth on X-Wave and the resonance, 100 their whole range
+#define PROJ_FORMAT 45u                  /* 45: the live macros (Dark-Bright, Thickness, Motion, Space) in the
+                                          * slots of the gesture keys' old times (44's read, those at rest);
+                                          * 44: the LFO's depth on X-Wave and the resonance, 100 their whole range
                                           * (43's read, converted to the same range);
                                           * 43: the LFO rate 0..152, every second from 100 s to 10 s (41's and 42's
                                           * read, converted);
