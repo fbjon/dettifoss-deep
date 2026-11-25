@@ -1,5 +1,11 @@
 # Niagara Drift
 
+> **This repository is Dettifoss Deep, a fork of [Niagara Drift](https://github.com/evanyerburgh/niagara-drift) by Evan
+> Yerburgh, in early development.** The aim is a songwriting instrument on Niagara Drift's engine: latching chords, a
+> live page of four macro knobs, sections and a song. No release exists yet, and the code is still Niagara Drift's at
+> its commit `887c3d7`: everything below is its manual, unchanged, and its install links lead to Evan's releases.
+> Changes made here are listed in [CHANGELOG.md](CHANGELOG.md) as they land.
+
 **A drone synth for the M-VAVE FM-1.**
 
 Two drones that breathe and drift, and you play them: levels, filters and pitch under your hands, gestures and

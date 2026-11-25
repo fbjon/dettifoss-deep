@@ -9,7 +9,8 @@ on:
 
 jobs:
   claude-review:
-    if: github.event.pull_request.draft == false
+    # Off unless the repository variable CLAUDE_ACTIONS is "on" (and the secret CLAUDE_CODE_OAUTH_TOKEN is set)
+    if: vars.CLAUDE_ACTIONS == 'on' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 40              # the tests take ~2 minutes; ci_results.py waits up to 25
     permissions:
