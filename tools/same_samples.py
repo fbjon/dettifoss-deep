@@ -61,7 +61,7 @@ def run_all(tree, scripts, out, problems, new=frozenset()):
         d.mkdir(parents=True, exist_ok=True)
         r = subprocess.run([str(host), str(s), str(d)], cwd=tree, capture_output=True, text=True)
         crashed = r.returncode < 0 or ("unknown command" in r.stdout + r.stderr and s.name not in new)
-        if crashed or (r.returncode and s.parent.name == "golden"):
+        if crashed or (r.returncode and s.parent.name == "golden" and s.name not in new):
             tail = (r.stdout + r.stderr).strip().splitlines()[-5:]
             problems.append(f"{tree.name}: {s.parent.name}/{s.name} exited {r.returncode}: " + " / ".join(tail))
     d = out / "drone_render"
