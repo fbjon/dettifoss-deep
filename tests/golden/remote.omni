@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the screen while the emulator on a computer plays from this panel
+# (plat_fm1.c's REMOTE), and the page drawn afresh after. Not a test of its own.
+notips
+tap PLAY
+wait 1500
+remote 1
+wait 200
+shot remote.png
+remote 0
+wait 200
+shot remote-back.png

@@ -8,9 +8,15 @@ uint32_t plat_us(void) { return MQ_NOW_US(); }
 /* one look at the panel: plat_buttons() takes it (the buttons and the keys held, no tap since the last look lost:
  * hal/fm1_taps.h), plat_keys() gives that look's keys. The UI calls them in this order, once each time round. */
 static uint32_t look_keys;
+static int rm_is_on(void);
 uint32_t plat_buttons(void)
 {
-    uint32_t raw = fm1_input_held(&look_keys), out = 0, i;
+    uint32_t raw, out = 0, i;
+    if (rm_is_on()) {                               /* the panel is the computer's: no hand on it here */
+        look_keys = 0;
+        return 0;
+    }
+    raw = fm1_input_held(&look_keys);
     for (i = 0; i < NB; i++)
         if (raw & (1u << panel.btn[i]))
             out |= 1u << i;
@@ -22,13 +28,99 @@ uint32_t plat_keys(void) { return look_keys & ((1u << NKEYS) - 1u); }
 
 int32_t plat_enc(int role)
 {
-    if (role < 0 || role >= NE)
+    if (role < 0 || role >= NE || rm_is_on())
         return 0;
     return fm1_enc_take(panel.enc[role]) * panel.dir[role];
 }
 
-static volatile uint32_t master_q12 = 2048;
-uint32_t plat_master(void) { return master_q12; }
+static volatile uint32_t master_q12 = 2048, master_k10;   /* the level, and the pot's turn 0 .. 1023 */
+
+/* REMOTE: the panel played into the emulator on a computer (web/emu), for trying a build without flashing it.
+ * The page asks over USB-MIDI and asks again every second; while it does, the FM-1's own sound and screen rest (the
+ * UI sees no hand on the panel, MASTER at 0) and every change on the panel goes to the page, which sends back its
+ * lights. Three seconds without hearing it, the FM-1 is itself again. SysEx F0 7D 44 44 cmd .. F7 ("DD"):
+ *   page -> FM-1   1 HELLO          play the emulator from the panel (again every second)
+ *                  2 BYE            stop
+ *                  3 LIGHTS l..     41 levels 0..127: the buttons (B_*), then the keys from F3
+ *   FM-1 -> page   1 HELLO ver      the answer to each HELLO
+ *                  16 PANEL         the buttons held (B_*, 2 x 7 bits), the keys (4 x 7 bits from F3), MASTER's
+ *                                   turn (2 x 7 bits, 0 .. 1023), and each knob's detents since the last (EN_*, 64 + n) */
+#define RM_GONE_MS 3000u
+static struct {
+    uint8_t on, sent;
+    uint32_t heard, btn, keys, master, t;
+    int32_t enc[NE];
+    uint8_t lb[NB], lk[NKEYS];
+} rm;
+static int rm_frame(const uint8_t *p, uint32_t n)   /* a SysEx from the computer (between F0 and F7): 1 if ours */
+{
+    uint32_t i;
+    if (n < 4u || p[0] != 0x7Du || p[1] != 0x44u || p[2] != 0x44u)
+        return 0;
+    if (p[3] == 1u) {
+        static const uint8_t HI[] = {0xF0, 0x7D, 0x44, 0x44, 1, 1, 0xF7};
+        if (!rm.on) {
+            memset(&rm, 0, sizeof rm);
+            rm.on = 1;
+            ui_remote(1);
+        }
+        rm.heard = fm1_ms;
+        ann_wire_send(HI, sizeof HI);
+    } else if (p[3] == 2u && rm.on) {
+        rm.heard = fm1_ms - RM_GONE_MS - 1u;
+    } else if (p[3] == 3u && n >= 4u + NB + NKEYS) {
+        for (i = 0; i < NB; i++)
+            rm.lb[i] = (uint8_t)(p[4 + i] * 2u + (p[4 + i] >> 6));
+        for (i = 0; i < NKEYS; i++)
+            rm.lk[i] = (uint8_t)(p[4 + NB + i] * 2u + (p[4 + NB + i] >> 6));
+    }
+    return 1;
+}
+static void rm_poll(void)                           /* from the main loop: the panel to the page */
+{
+    uint32_t raw, k, b = 0, i;
+    int moved = 0;
+    if (!rm.on)
+        return;
+    if (fm1_ms - rm.heard > RM_GONE_MS) {
+        rm.on = 0;
+        ui_remote(0);
+        return;
+    }
+    raw = fm1_input_held(&k);
+    for (i = 0; i < NB; i++)
+        if (raw & (1u << panel.btn[i]))
+            b |= 1u << i;
+    k &= (1u << NKEYS) - 1u;
+    for (i = 0; i < NE; i++) {
+        rm.enc[i] += fm1_enc_take(panel.enc[i]) * panel.dir[i];
+        moved |= rm.enc[i] != 0;
+    }
+    if (master_k10 + 4u < rm.master || master_k10 > rm.master + 4u || (master_k10 != rm.master && !master_k10) ||
+        (master_k10 != rm.master && master_k10 == 1023u))
+        moved = 1;                                  /* the pot, past its jitter (and always to its ends) */
+    if (rm.sent && b == rm.btn && k == rm.keys && !moved)
+        return;
+    {
+        uint8_t f[4 + 1 + 2 + 4 + 2 + NE + 1] = {0xF0, 0x7D, 0x44, 0x44, 16};
+        const uint32_t m = master_k10;
+        f[5] = (uint8_t)(b & 127u), f[6] = (uint8_t)(b >> 7 & 127u);
+        for (i = 0; i < 4u; i++)
+            f[7 + i] = (uint8_t)(k >> (7u * i) & 127u);
+        f[11] = (uint8_t)(m & 127u), f[12] = (uint8_t)(m >> 7 & 127u);
+        for (i = 0; i < NE; i++)
+            f[13 + i] = (uint8_t)(64 + (rm.enc[i] > 63 ? 63 : rm.enc[i] < -63 ? -63 : rm.enc[i]));
+        f[sizeof f - 1u] = 0xF7;
+        if (ann_wire_send(f, sizeof f))
+            return;                                 /* no room: the same, with what moved since, next time */
+        rm.sent = 1, rm.btn = b, rm.keys = k, rm.master = m;
+        for (i = 0; i < NE; i++)
+            rm.enc[i] -= f[13 + i] - 64;
+    }
+}
+
+static int rm_is_on(void) { return rm.on; }
+uint32_t plat_master(void) { return rm.on ? 0u : master_q12; }
 
 /* LEDs: the picture is built off-line and copied one byte per column (Felucca: clearing
  * and relighting would let the 10 kHz scan catch the dark gap and flicker) */
@@ -56,6 +148,8 @@ void plat_leds(const uint8_t *buttons, const uint8_t *keys)
 {
     uint8_t nl[FM1_NCOL] = {0}, pw[FM1_LED_PHASES][FM1_NCOL];
     uint32_t i, c, f;
+    if (rm.on)                                      /* the emulator's lights */
+        buttons = rm.lb, keys = rm.lk;
     memset(pw, 0, sizeof pw);
     for (i = 0; i < NB + NKEYS; i++) {
         uint32_t id = i < NB ? panel.btn[i] : 14u + (i - NB), lv = i < NB ? buttons[i] : keys[i - NB], d;

@@ -163,6 +163,7 @@ body.drawn .g-card, body.drawn .start-col, body.drawn .doors a, body.drawn .try-
 .keys-link { margin-left: .6rem; font: 500 .6em var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--pale);
              background: var(--black); padding: .3em .8em; border-radius: 999px; text-decoration: none; white-space: nowrap; }
 a.keys-link:hover, a.keys-link:focus-visible { text-decoration: underline; }
+.bar #remote.on { background: var(--black); color: var(--ink); }
 .bar #reset { margin-left: auto; }   /* the reset apart, at the right: it forgets your sounds */
 .bar .keys-link { margin-left: 0; font-size: .85rem; padding: .45em 1em; }   /* just under the emulator */
 html { scroll-behavior: smooth; } @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
@@ -408,6 +409,7 @@ header nav { z-index: 6; }
   <span class="playhint" id="playhint" role="status" hidden>Press <kbd>PLAY</kbd> to start the drones</span>
   <span class="turn">Turn your phone sideways for bigger keys</span>
   <a class="keys-link" href="#keys">Computer keys ↓</a>
+  <button id="remote" type="button" hidden title="Play this emulator from an FM-1 on USB: its keys, buttons and knobs play here, and its lights show this one's">Play from your FM-1</button>
   <button id="reset" type="button" aria-label="Factory reset" title="Factory reset: forget your sound and scenes, and start again from the factory settings">Reset</button>
 </div>
 <!--ACTIONS-->
@@ -456,6 +458,7 @@ header nav { z-index: 6; }
       <div><dt>OCT− · OCT+</dt><dd><kbd>Z</kbd> · <kbd>X</kbd></dd></div>
       <div><dt>LFO rate · Movement</dt><dd><kbd>↑</kbd><kbd>↓</kbd> · <kbd>←</kbd><kbd>→</kbd></dd></div>
       <div><dt>Any knob</dt><dd><kbd>Tab</kbd> to it, then <kbd>↑</kbd><kbd>↓</kbd></dd></div>
+      <div><dt>An FM-1 on USB</dt><dd><b>Play from your FM-1</b> (Chrome, Edge): its panel plays this one</dd></div>
     </dl>
   </div>
 </section>
@@ -669,8 +672,9 @@ let node = null, btnMask = 0, keyMask = 0, latched = 0, masterPos = 0.74;
 const masterQ = t => Math.round(t < 0.8 ? 3277 * (t / 0.8) ** 2 : 3277 + (t - 0.8) / 0.2 * 819);
 const btnHeldBy = new Map(), keyHeldBy = new Map();      // pointer / key id -> bit
 function send(m) { if (node) node.port.postMessage(m); }
+let remoteBtn = 0, remoteKeys = 0;   // held on an FM-1 playing this page (below)
 function syncButtons() {
-  let m = latched;
+  let m = latched | remoteBtn;
   for (const b of btnHeldBy.values()) m |= 1 << b;
   if (m !== btnMask) { btnMask = m; send({ type: "buttons", mask: m }); }
   if (m & (1 << BTN.PLAY)) document.getElementById("playhint").hidden = true;   // PLAY found: the hint has done its job
@@ -682,7 +686,7 @@ function syncButtons() {
   }
 }
 function syncKeys() {
-  let m = 0;
+  let m = remoteKeys;
   for (const k of keyHeldBy.values()) m |= 1 << k;
   if (m !== keyMask) { keyMask = m; send({ type: "keys", mask: m }); }
   keys.forEach((k, i) => k.g.classList.toggle("held", !!(m & (1 << i))));
@@ -882,6 +886,7 @@ async function switchOn() {
         else if (m.type === "frame") {
           if (m.fb) drawScreen(m.fb);
           drawLights(m.buttons, m.keys, m.levels, m.keyLevels);
+          remoteLights(m.levels, m.keyLevels);
           drawLayer(m.lfo);
           window.omniLast = m;
           if (m.load !== undefined) cpu.textContent = `Niagara Drift uses ${m.load}% of this computer's time`;
@@ -903,6 +908,78 @@ async function switchOn() {
   }
 }
 document.getElementById("go").addEventListener("click", switchOn);
+
+// ---------------------------------------------------------------- an FM-1 as the controller
+// An FM-1 on USB running this firmware plays this page: the page says HELLO (SysEx F0 7D 44 44 1 F7) every second, and
+// while it does the FM-1 rests and sends each change on its panel (16 PANEL: the buttons and keys held, MASTER's turn,
+// each knob's detents), and takes this page's lights (3 LIGHTS). Closing the page, or Stop, gives the FM-1 back
+// (firmware/src/app/plat_fm1.c, REMOTE). Chrome and Edge have Web MIDI; it asks once for SysEx.
+const RM_H = [0xF0, 0x7D, 0x44, 0x44], rmBtn = document.getElementById("remote");
+let remote = null;
+rmBtn.hidden = !navigator.requestMIDIAccess;
+function remoteSend(out, cmd, body = []) { try { out.send([...RM_H, cmd, ...body, 0xF7]); } catch {} }
+function remoteIn(e) {
+  const d = e.data;
+  if (d.length < 6 || d[0] !== 0xF0 || d[1] !== 0x7D || d[2] !== 0x44 || d[3] !== 0x44) return;
+  if (d[4] === 1 && remote && !remote.out) {                 // the FM-1 that answered: this port pair from now on
+    remote.out = remote.cands.find((o) => o.name === e.target.name) || remote.cands[0];
+    remote.inp = e.target;
+    rmBtn.textContent = "FM-1 playing · stop";
+    rmBtn.classList.add("on");
+    status.textContent = "On, played from your FM-1";
+  } else if (d[4] === 16 && d.length >= 21 && remote && remote.inp === e.target) {
+    remoteBtn = d[5] | d[6] << 7;
+    remoteKeys = d[7] | d[8] << 7 | d[9] << 14 | d[10] << 21;
+    syncButtons(); syncKeys();
+    const mp = (d[11] | d[12] << 7) / 1023;
+    if (Math.abs(mp - masterPos) > 1e-3) {
+      masterPos = mp;
+      knobs.MASTER.angle = -135 + 270 * masterPos;
+      drawKnob(knobs.MASTER);
+      send({ type: "master", value: masterQ(masterPos) });
+    }
+    for (const k of Object.values(knobs))
+      if (k.role !== "master") turn(k, d[13 + k.role] - 64);
+  }
+}
+async function remoteStart() {
+  let access;
+  try { access = await navigator.requestMIDIAccess({ sysex: true }); }
+  catch (err) { status.textContent = "No MIDI here: the browser said no (" + (err && err.name || err) + ")"; return; }
+  const outs = [...access.outputs.values()], ins = [...access.inputs.values()];
+  const named = outs.filter((o) => /fm-1|felucca|composite|sinco|usb-midi|omni/i.test(o.name || ""));
+  remote = { access, cands: named.length ? named : outs, out: null, inp: null, lights: "" };
+  for (const i of ins) i.addEventListener("midimessage", remoteIn);
+  const hello = () => {
+    if (!remote) return;
+    for (const o of remote.out ? [remote.out] : remote.cands) remoteSend(o, 1);
+  };
+  hello();
+  remote.timer = setInterval(hello, 1000);
+  rmBtn.textContent = "Looking for the FM-1 · stop";
+  status.textContent = outs.length ? "Looking for the FM-1 on USB" : "No MIDI ports: is the FM-1 plugged in?";
+}
+function remoteStop() {
+  if (!remote) return;
+  clearInterval(remote.timer);
+  for (const o of remote.out ? [remote.out] : remote.cands) remoteSend(o, 2);
+  for (const i of remote.access.inputs.values()) i.removeEventListener("midimessage", remoteIn);
+  remote = null;
+  remoteBtn = remoteKeys = 0;
+  syncButtons(); syncKeys();
+  rmBtn.textContent = "Play from your FM-1";
+  rmBtn.classList.remove("on");
+  status.textContent = node ? "On" : "Off";
+}
+function remoteLights(levels, keyLevels) {   // this page's lights on the FM-1, when they change
+  if (!remote || !remote.out || !levels || !keyLevels) return;
+  const b = [...levels, ...keyLevels].map((v) => v >> 1), key = b.join();
+  if (key === remote.lights) return;
+  remote.lights = key;
+  remoteSend(remote.out, 3, b);
+}
+rmBtn.addEventListener("click", () => remote ? remoteStop() : remoteStart());
+addEventListener("pagehide", remoteStop);
 document.getElementById("reset").addEventListener("click", () => {
   if (document.getElementById("reset").dataset.armed) {
     try { localStorage.removeItem(STORE_KEY); } catch {}
