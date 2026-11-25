@@ -2279,6 +2279,7 @@ static void lk_pitch_lanes(void)
         }
     }
 }
+static void lk_pic_live(void);                 /* live.c */
 static void lk_pic(void)
 {
     const int msg = plat_ms() < ui.msg_until;
@@ -2304,6 +2305,7 @@ static void lk_pic(void)
     case V_SETUP2: lk_pic_setup2(); break;
     case V_FX:
     case V_FX2: lk_pic_space(); break;
+    case V_LIVE: lk_pic_live(); break;
     default: lk_pic_drones2(); break;
     }
     if (ui.view == V_FX2 && !msg) {            /* Details' second jobs, on the rule above Time and Type: the delay's
@@ -2895,6 +2897,8 @@ static void lk_values(void)
                 lk_cdots(cx, 70, frac);
             else if (p == P_WIDTH)             /* Stereo a slider, mono .. wide */
                 lk_xfader(cx, 70, frac, LK_G);
+            else if (ui.view == V_LIVE)        /* the live macros: from the middle, 0 the sound as set */
+                lk_cdots(cx, 70, frac);
             else if (ui.view == V_PULSE)       /* ARP's pills; Shape's from the middle */
                 lk_pills(cx, 70, frac, p == P_PULSE_SHAPE);
             else if (p == P_WSCALE)            /* Scale's dots, one-word names too (Evan: Dorian had a ruler) */

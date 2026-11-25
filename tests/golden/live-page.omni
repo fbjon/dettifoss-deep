@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the Live page (SEL + HOME): chords on the keys, the modifiers armed
+# for the next chord, a bass set apart and let go, the octave, Snap, the live macros on the knobs. Not a test of its own.
+notips
+tap PLAY
+wait 1500
+press SEL
+tap HOME
+release SEL
+wait 600
+expect view 15
+shot live-empty.png
+wav live-page.wav
+tapkey 7
+wait 2500
+shot live-c.png
+leds
+tapkey 13
+tapkey 20
+wait 300
+shot live-armed.png
+tapkey 4
+wait 2500
+shot live-am7.png
+tapkey 13
+tapkey 20
+tapkey 22
+tapkey 0
+wait 2500
+tapkey 26
+wait 200
+shot live-bass-armed.png
+tapkey 11
+wait 2500
+shot live-fmaj7-e.png
+leds
+tapkey 26
+wait 2000
+turn ALGO 20
+tapkey 20
+tapkey 17
+tapkey 2
+wait 2500
+shot live-g7sus4.png
+turn K2 -50
+wait 2000
+shot live-thin.png
+turn K2 50
+turn K1 60
+wait 2000
+shot live-bright.png
+tap OCT-
+wait 2000
+press SEL
+tapkey 2
+release SEL
+wait 2500
+shot live-off.png
+wavstop
+press SEL
+tap HOME
+release SEL
+wait 600
+expect view 0
