@@ -269,6 +269,12 @@ void dr_panic(void);                           /* silence now, no fade */
 void dr_duck(int on);                          /* the output dips out (20 ms) or back (30 ms): around a flash write */
 void dr_lfo_reset(void);                       /* the LFO back to the start of its cycle (the DS-2's RESET) */
 void dr_seed(uint32_t s);                      /* mix s into the random generators (LFO, Drift): each run its own */
+/* the chord layer: drone g's main note (MIDI note x 100), its partner's interval over it (cents) and whether the
+ * partner plays; held until dr_chord_go, which moves both drones to their notes (on) or back to the sound's Pitch and
+ * partner (off). Snap (0..100) is how a change lands: 0 a 4 s glide, 50 300 ms with a slight dip, 100 at once with the
+ * level dipped out and back (a new attack). While a chord plays, the Pitch knobs and PITCH LINK don't move the drones */
+void dr_chord(int g, int main_c, int iv_c, int pon);
+void dr_chord_go(int on, int snap);
 
 /* the render (audio ISR): n stereo frames, 24-bit in int32; gain Q12 (the MASTER pot) */
 void dr_render(int32_t *out_lr, uint32_t n, uint32_t gain_q12);

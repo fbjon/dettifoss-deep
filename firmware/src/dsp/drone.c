@@ -657,7 +657,7 @@ void dr_param_text(int i, int v, char *b)
 }
 
 /* -------------------------------------------------------------- commands --- */
-enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST };
+enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO };
 /* a load (boot, project_apply) posts every value at once, before the render drains any: the queue holds
  * them all (at 64 the last values of a saved sound were dropped at start-up, the macros among them) */
 #define QN 128u
@@ -683,6 +683,15 @@ void dr_pslide(int param, int ms) { post(C_PSLIDE, param, ms); }
 void dr_lfo_reset(void) { post(C_LFO_RESET, 0, 0); }
 void dr_seed(uint32_t s) { post(C_SEED, (int)(s >> 16 & 0xFFu), (int)(s & 0xFFFFu)); }
 void dr_gesture(int g, int amt) { post(C_GEST, g, amt); }
+void dr_chord(int g, int main_c, int iv_c, int pon)
+{
+    if (g < 0 || g >= DR_NGROUPS)
+        return;
+    post(C_CHORD, g * 4 + 0, main_c);
+    post(C_CHORD, g * 4 + 1, iv_c);
+    post(C_CHORD, g * 4 + 2, pon);
+}
+void dr_chord_go(int on, int snap) { post(C_CHORD_GO, snap < 0 ? 0 : snap > 100 ? 100 : snap, on); }
 
 /* ----------------------------------------------------------------- state --- */
 volatile float dr_level[DR_NGROUPS];
@@ -758,6 +767,10 @@ typedef struct {
     float xs;                                     /* SNARL (v0.3, Cross-mod's fourth): how far in, 0..1 */
     float xp, xh, xc;                             /* CROSS-FM (v0.3): how far in, 0..1; the other's sound's low part;
                                                    * the limited sound's mean */
+    /* the chord layer (dr_chord): while con, the main oscillator plays cp, not the Pitch; while cia, the partner's
+     * interval is civ, gliding to civt (or, con off, back to its own) by civr a tick; its gain to cpon by cpgs */
+    uint8_t con, cia, cpon;
+    float cp, civ, civt, civr, cpgs;
     uint8_t rt[2], rp[2];                         /* the LFO routes (osc, filter): the tap now, the one before */
     float rw[2];                                  /* ... from the one before to now, 0..1 */
     float dw[2];                                  /* their destinations: osc 0 pitch .. 1 X-WAVE, filter 0
@@ -778,6 +791,12 @@ static float tick_d[DR_NGROUPS], tick_u[DR_NGROUPS];
  * root, 1 the third, 2 the top note, 3 the fifth) and how many octaves up */
 static float chord_t[DR_NGROUPS];
 static int chord_on[DR_NGROUPS];
+/* the chord layer: each drone's notes as sent (dr_chord: the main note, MIDI x 100; the partner's interval, cents;
+ * the partner on), taken up together by dr_chord_go. A change dips the level (ch_a deep: 15 ms down, held a moment),
+ * swaps at the bottom, then glides there over ch_ms while the level comes back (150 ms); ch_m the level now, 0..1 */
+static int16_t chs_main[DR_NGROUPS], chs_iv[DR_NGROUPS];
+static uint8_t chs_pon[DR_NGROUPS], ch_on, ch_dir;   /* ch_dir: 1 going down, 2 coming back, 0 resting */
+static float ch_ms, ch_a, ch_e, ch_m = 1.0f;
 static const uint8_t CHORD_V[5][4] = {{1, 1, 2, 1}, {1, 1, 2, 2}, {0, 1, 1, 2}, {2, 1, 1, 2}, {3, 1, 1, 2}};
 static int chord_vi;
 /* A scale's note on the Tuning (Evan, 2026-10-30): its interval over drone I, semitones; cur as on 12-tone, j its pure
@@ -1405,6 +1424,73 @@ float dr_age_now(float *ph)
     return age_l;
 }
 
+/* the chord layer: what dr_chord_go's Snap (0..100) means. The glide: 4 s at 0, 300 ms at 50 (evenly in log time
+ * between), none at 100 (in a straight line from 50). The dip: none at 0, 15 % at 50 (a breath, so a change is
+ * heard landing), all the way at 100 (each change a new attack, as a pad's) */
+static float snap_ms(int s)
+{
+    return s <= 50 ? 4000.0f * fm_exp2f(-3.7369656f * (float)s * 0.02f) : 300.0f * (float)(100 - s) * 0.02f;
+}
+static float snap_dip(int s)
+{
+    return s <= 50 ? 0.15f * (float)s * 0.02f : 0.15f + 0.85f * (float)(s - 50) * 0.02f;
+}
+static void chord_swap(void)                     /* the bottom of the dip: each drone starts for its new notes */
+{
+    int g;
+    for (g = 0; g < DR_NGROUPS; g++) {
+        grp_t *v = &grp[g];
+        const float k = ch_ms > 0.0f ? (float)CR * 1000.0f / (ch_ms * DR_SR) : 0.0f;   /* a tick's share of the glide */
+        const float to = ch_on ? (float)chs_main[g] * 0.01f : (float)par[DR_GP(g, GP_PITCH)] * 0.01f;
+        if (!v->cia)                             /* from the interval it has now */
+            v->civ = v->ovon ? v->ov : v->ivs;
+        v->con = ch_on;
+        v->cia = 1;
+        v->cpon = ch_on ? chs_pon[g] : 0;
+        if (ch_on)
+            v->cp = to;
+        v->civt = (float)chs_iv[g] * 0.01f;
+        v->slide = k > 0.0f ? fm_maxf(fm_fabsf(to - v->st) * k, 1e-5f) : 0.0f;
+        v->civr = k > 0.0f ? fm_maxf(fm_fabsf(v->civt - v->civ) * k, 1e-5f) : 1e6f;
+        v->cpgs = (float)CR * 1000.0f / (fm_maxf(ch_ms, 20.0f) * DR_SR);
+    }
+}
+static void chord_go(int on, int snap)
+{
+    const float d = snap_dip(snap), now = ch_a * fm_minf(ch_e, 1.0f);   /* (a dip still coming back: on from where it is) */
+    ch_on = (uint8_t)on;
+    ch_ms = snap_ms(snap);
+    if (d > 0.0f && fade > 0.0f) {               /* down first */
+        ch_a = fm_maxf(d, now);
+        ch_e = now / ch_a;
+        ch_dir = 1;
+    } else {                                     /* no dip, or nothing heard: at once */
+        chord_swap();
+        ch_a = now;
+        ch_e = now > 0.0f ? 1.0f : 0.0f;
+        ch_dir = now > 0.0f ? 2 : 0;
+    }
+}
+static void chord_run(uint32_t n)                /* the dip, a block on */
+{
+    if (ch_dir == 1) {                           /* down, then held there 15 ms x its depth (the level's own 6 ms
+                                                  * smoothing gets there too, so a jump at the bottom isn't heard) */
+        ch_e += (float)n * (1.0f / (0.015f * DR_SR));
+        if (ch_e >= 1.0f + ch_a) {
+            ch_e = 1.0f;
+            ch_dir = 2;
+            chord_swap();
+        }
+    } else if (ch_dir == 2) {
+        ch_e -= (float)n * (1.0f / (0.15f * DR_SR));
+        if (ch_e <= 0.0f) {
+            ch_e = 0.0f;
+            ch_dir = 0;
+        }
+    }
+    ch_m = 1.0f - ch_a * fm_minf(ch_e, 1.0f);
+}
+
 static void drain(void)
 {
     while (q_r != q_w) {
@@ -1437,7 +1523,8 @@ static void drain(void)
                 if (a < P_XMOD && a % GP_N == GP_PITCH) {   /* a pitch: a slide asked for (the Glide after it) */
                     grp_t *v = &grp[a / GP_N];
                     float d = fm_fabsf((float)par[a] * 0.01f - v->st);
-                    v->slide = v->slide_ms ? fm_maxf(d * (float)CR * 1000.0f / ((float)v->slide_ms * DR_SR), 1e-5f) : 0.0f;
+                    if (!v->con)                /* (a chord holds the pitch: its own slide stays) */
+                        v->slide = v->slide_ms ? fm_maxf(d * (float)CR * 1000.0f / ((float)v->slide_ms * DR_SR), 1e-5f) : 0.0f;
                     v->slide_ms = 0;
                 } else if (a == P_PLINK_OFF) {  /* the link offset slides as drone II's pitch would */
                     grp_t *v = &grp[1];
@@ -1473,6 +1560,19 @@ static void drain(void)
             break;
         case C_DUCK:
             duck_to = a ? 0.0f : 1.0f;
+            break;
+        case C_CHORD:
+            if (a / 4 < DR_NGROUPS) {
+                if (a % 4 == 0)
+                    chs_main[a / 4] = (int16_t)b;
+                else if (a % 4 == 1)
+                    chs_iv[a / 4] = (int16_t)b;
+                else
+                    chs_pon[a / 4] = (uint8_t)(b != 0);
+            }
+            break;
+        case C_CHORD_GO:
+            chord_go(b != 0, a);
             break;
         case C_VOICE:
             if (a < DR_NGROUPS)
@@ -1855,8 +1955,10 @@ static void morph_snap(int g)                    /* all of a drone's switches wh
     int i;
     for (i = 0; i < 3; i++)
         v->wm[i] = p[GP_MODE] == i ? 1.0f : 0.0f;
-    v->pg = p[GP_PARTNER] ? 1.0f : 0.0f;
+    v->pg = (v->con ? v->cpon : p[GP_PARTNER] != 0) ? 1.0f : 0.0f;
     v->ovon = 0;
+    v->cia = v->con;                             /* (a chord's interval where it's going) */
+    v->civ = v->civt;
     v->ov = 0.0f;
     v->ig = 1.0f;
     v->ivi = -1;
@@ -1884,7 +1986,8 @@ static void morph_tick(int g, float step)        /* one control tick of the swit
     int i;
     for (i = 0; i < 3; i++)
         v->wm[i] = toward(v->wm[i], p[GP_MODE] == i ? 1.0f : 0.0f, step);
-    v->pg = toward(v->pg, p[GP_PARTNER] ? 1.0f : 0.0f, step);
+    v->pg = v->cia ? toward(v->pg, (v->con ? v->cpon : p[GP_PARTNER] != 0) ? 1.0f : 0.0f, fm_maxf(step, v->cpgs))
+                   : toward(v->pg, p[GP_PARTNER] ? 1.0f : 0.0f, step);
     v->nc = pfs[DR_GP(g, GP_NCOLOR)] * 0.01f;    /* the colour, a blend white .. pink, gliding as a knob does */
     if (v->ovon != chord_on[g] || (chord_on[g] && fm_fabsf(v->ov - chord_t[g]) > 1e-3f)) {
         v->ig -= 2.0f * step;                    /* a gesture's interval for the partner (CHORD, v0.3): down, swap, up */
@@ -2057,14 +2160,14 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
     /* Unison with no Detune is one fat oscillator: the partner is pulled into phase with the main (~25 ms),
      * so it can't sit half a cycle out and cancel it (it did: -20 dB, depending on what came before), and
      * Drift's wanders don't beat them. Any Detune lets it go. */
-    const int plock = !v->ovon && iv == DR_IV_UNISON && pv[GP_DETUNE] < 0.5f;
+    const int plock = !v->ovon && !v->cia && iv == DR_IV_UNISON && pv[GP_DETUNE] < 0.5f;
     const float tune = 12.0f * fm_log2f(1.0f + (float)par[P_TUNE] * (1.0f / 4400.0f)),   /* A in Hz, as semitones */
-                target = (float)p[GP_PITCH] * 0.01f;
+                target = v->con ? v->cp : (float)p[GP_PITCH] * 0.01f;   /* a chord's note, or the Pitch */
     /* the cutoff, 0..1000 = log2 20 .. log2 18000 */
     const float cut_t = 4.32192809f + pv[GP_CUTOFF] * 0.00981378f;
     /* the links, on drone II: hard sync, pitch link, cross-mod (12 octaves a unit of drone I's sound, at
      * the top: its sound is about +-0.3, so +-3.6 octaves) */
-    const int link = g == 1 && par[P_PLINK];
+    const int link = g == 1 && par[P_PLINK] && !v->con;
     const float xamt = g == 1 ? depth_amtf(pfs[P_XMOD_AMT]) * 12.0f : 0.0f;
     const float famt_x = depth_amtf(pfs[P_XMOD_AMT]) * 10.0f;   /* CROSS-FM: the other's sound (~+-0.3) x 10 at the top */
     const float frate = fade_rate() * (float)CR;
@@ -2157,6 +2260,14 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
         }
         /* the switches, a tick nearer their settings (MORPH) */
         morph_tick(g, mstep);
+        if (v->cia) {                            /* a chord's interval for the partner, gliding (back to its own when
+                                                  * the chord's let go, then its own again) */
+            const float it = v->con ? v->civt : v->ovon ? v->ov : v->ivs, d = it - v->civ;
+            v->civ = fm_fabsf(d) <= v->civr ? it : v->civ + (d > 0.0f ? v->civr : -v->civr);
+            if (!v->con && v->civ == it)
+                v->cia = 0;
+            ival = v->civ;
+        }
         og = (0.9f - 0.28f * v->pg) * omix;      /* main alone 0.9, with its partner 0.62 each */
         sg = sub * v->sg;
         sw = v->sw;
@@ -2246,7 +2357,7 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
         bk = 0.5f * gc / (1.0f + 0.5f * gc);     /* the makeup's one-pole, an octave under the cutoff */
         gend = v->gtarget > gf ? fm_minf(gf + frate, v->gtarget) : fm_maxf(gf - frate, v->gtarget);
         gstep = (gend - gf) * (1.0f / (float)CR);
-        lend = lv + (lvl * fm_exp2f(dw * 0.4f * v->wn[2]) - lv) * 0.06f;   /* ~6 ms: a Level turn never clicks */
+        lend = lv + (lvl * ch_m * fm_exp2f(dw * 0.4f * v->wn[2]) - lv) * 0.06f;   /* (ch_m: a chord change's dip) */   /* ~6 ms: a Level turn never clicks */
         lstep = (lend - lv) * (1.0f / (float)CR);
         for (j = j0; j < je; j++) {
             float ci = inc, cp = pinc, cs = sinc, x, y, v1, v2, v3, a;
@@ -2653,6 +2764,7 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
             sbuf[j] = 0;
         }
         if (fade > 0.0f || fade_target > 0.0f) {
+            chord_run(k);
             for (g = 0; g < DR_NGROUPS; g++)
                 DR_FAR(render_group)(g, k);
             sc_clk += k;
@@ -2668,8 +2780,8 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
                 morph_snap(g);
                 for (q = 0; q < DR_SCOPE_N; q++) /* and the drones are drawn flat */
                     dr_scope[g][q] = 0.0f;
-                float t = (float)par[DR_GP(g, GP_PITCH)] * 0.01f;
-                if (g == 1 && par[P_PLINK]) {
+                float t = v->con ? v->cp : (float)par[DR_GP(g, GP_PITCH)] * 0.01f;
+                if (g == 1 && par[P_PLINK] && !v->con) {
                     v->lofs = (float)par[P_PLINK_OFF] * 0.01f;
                     t = grp[0].pitch + v->lofs;
                 }

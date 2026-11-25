@@ -128,6 +128,7 @@ static const char *const names[] = {
     "the same, Cross-mod on pitch (cross-FM)",
     "the same, Cross-mod on the output (Snarl)",
     "the same, the reverb Shimmer (v0.3)",
+    "the same, under a chord, gliding to it",
 };
 #define NCASES ((int)(sizeof names / sizeof names[0]))
 
@@ -143,6 +144,14 @@ static void setup(int c)
     case 6: drone(1, 2, 2); dr_set(P_XMOD, DR_XMOD_FM); break;   /* cross-FM (v0.3) */
     case 7: drone(1, 2, 2); dr_set(P_XMOD, DR_XMOD_OUT); break;  /* Snarl (v0.3) */
     case 8: drone(1, 2, 2); dr_set(P_REV_TYPE, 4); break;         /* Shimmer: the octave in the reverb's loop */
+    case 9:                                                         /* the chord layer: both drones gliding (Snap 0:
+                                                                     * 4 s, through the whole count) */
+        drone(1, 2, 2);
+        dr_set(P_REV_TYPE, 4);
+        dr_chord(0, 4500, 700, 1);
+        dr_chord(1, 6000, 400, 1);
+        dr_chord_go(1, 0);
+        break;
     }
 }
 
