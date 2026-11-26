@@ -280,10 +280,12 @@ void dr_lfo_reset(void);                       /* the LFO back to the start of i
 void dr_seed(uint32_t s);                      /* mix s into the random generators (LFO, Drift): each run its own */
 /* the chord layer: drone g's main note (MIDI note x 100), its partner's interval over it (cents) and whether the
  * partner plays; held until dr_chord_go, which moves both drones to their notes (on) or back to the sound's Pitch and
- * partner (off). Snap (0..100) is how a change lands: 0 a 4 s glide, 50 300 ms with a slight dip, 100 at once with the
- * level dipped out and back (a new attack). While a chord plays, the Pitch knobs and PITCH LINK don't move the drones */
+ * partner (off). Snap (0..100) is how a change lands: a wash (a glide, 4 s at 0), legato (a short glide), a pad's
+ * attack (released, at once on the new notes, and in again). While a chord plays, the Pitch knobs and PITCH LINK don't move the drones */
 void dr_chord(int g, int main_c, int iv_c, int pon);
 void dr_chord_go(int on, int snap);
+#define DR_SNAP_LEGATO 34                      /* Snap's three parts: 0 .. 33 a wash, 34 .. 66 legato, 67 .. 100 a pad's */
+#define DR_SNAP_PAD 67                         /* attack (drone.c, snap_ms) */
 
 /* the render (audio ISR): n stereo frames, 24-bit in int32; gain Q12 (the MASTER pot) */
 void dr_render(int32_t *out_lr, uint32_t n, uint32_t gain_q12);

@@ -1963,23 +1963,21 @@ int main(void)
         run(8);                                     /* (over a few cycles: a block is under one at C3) */
         before = rms();
         lo = 1.0f;
-        dr_chord(0, 4500, 700, 1);                  /* Am at Snap 50: the upper voices release and come back in */
+        dr_chord(0, 4500, 700, 1);                  /* Am at Snap 50, legato: no dip, every voice glides ~155 ms */
         dr_chord(1, 6000, 400, 1);
         dr_chord_go(1, 50);
         for (i = 0; i < 4; i++) {
             run(3);
             lo = fminf(lo, rms());
         }
-        run(secs(0.23f));
-        p_mid = dr_pitch[0];
-        check("chord, Snap 50: the upper voices come back in on their notes, no glide", fabsf(dr_pitch[1] - 60.0f) < 0.01f);
-        run(secs(0.45f));
+        p_mid = dr_pitch[1];
+        run(secs(0.3f));
         p_end = dr_pitch[0];
-        printf("  Snap 50: dip %.1f dB; bass %.2f after ~0.3 s, %.2f after ~0.75 s\n", (double)(20.0f * log10f(lo / before)),
-               (double)p_mid, (double)p_end);
-        check("chord, Snap 50: a slight dip (0.5 .. 3 dB)", lo < before * 0.94f && lo > before * 0.7f);
-        check("chord, Snap 50: the bass glides (part way at 300 ms, there by 750)", p_mid < 47.5f && p_mid > 45.5f &&
-              fabsf(p_end - 45.0f) < 0.01f);
+        printf("  Snap 50: dip %.1f dB; drone II %.2f after ~70 ms; bass %.2f after ~0.37 s\n",
+               (double)(20.0f * log10f(lo / before)), (double)p_mid, (double)p_end);
+        check("chord, Snap 50: legato, no dip (under 1.5 dB)", lo > before * 0.84f);
+        check("chord, Snap 50: every voice glides, quickly (part way at 70 ms, there by 370)",
+              p_mid < 63.5f && p_mid > 60.5f && fabsf(p_end - 45.0f) < 0.01f && fabsf(dr_pitch[1] - 60.0f) < 0.01f);
         dr_chord(0, 4100, 1600, 1);                 /* F at Snap 0: a 4 s glide, no dip */
         dr_chord(1, 6000, 0, 0);
         dr_chord_go(1, 0);

@@ -1501,23 +1501,21 @@ float dr_age_now(float *ph)
     return age_l;
 }
 
-/* the chord layer: what dr_chord_go's Snap (0..100) means. The bass's glide: 4 s at 0, 300 ms at 50 (evenly in log
- * time between), none at 100 (in a straight line from 50); its dip: none at 0, 15 % at 50 (a breath, so a change is
- * heard landing), all the way at 100. The upper voices: at 0 they glide with the bass; from 40 up they release
- * all the way and come back in on the new notes, never sliding (a glide of a whole stack is disorienting), in
- * between part way, gliding the rest. Their release: 120 ms up to 50, then quicker to 15 ms at 100; their attack
- * 350 ms up to 50, then 150 ms at 100 (Frej, 2026-11-26: a pad's change, not a drone's) */
-static float snap_up(int s) { return fm_minf((float)s * (1.0f / 40.0f), 1.0f); }
-static float snap_rel(int s) { return s <= 50 ? 0.12f : 0.12f - 0.105f * (float)(s - 50) * 0.02f; }
-static float snap_att(int s) { return s <= 50 ? 0.35f : 0.35f - 0.2f * (float)(s - 50) * 0.02f; }
+/* the chord layer: what dr_chord_go's Snap (0..100) means, in three parts (Frej, 2026-11-26). 0-33 a wash: every
+ * voice glides to its new note, 4 s at 0 down to 600 ms at 33 (evenly in log time). 34-66 legato: no dip, no new
+ * attack, a short glide, 250 ms down to 60 ms. 67-100 a pad's attack: every voice releases (150 ms at 67 down to
+ * 40 ms at 100), jumps to its new note at the bottom, never sliding, and comes in again, defined but not a
+ * transient (250 ms down to 60 ms) */
+static float snap_part(int s, int lo, int hi) { return (float)(s - lo) * (1.0f / (float)(hi - lo)); }
 static float snap_ms(int s)
 {
-    return s <= 50 ? 4000.0f * fm_exp2f(-3.7369656f * (float)s * 0.02f) : 300.0f * (float)(100 - s) * 0.02f;
+    return s < DR_SNAP_LEGATO ? 4000.0f * fm_exp2f(-2.7369656f * snap_part(s, 0, DR_SNAP_LEGATO - 1))   /* 4 s .. 600 ms */
+         : s < DR_SNAP_PAD ? 250.0f - 190.0f * snap_part(s, DR_SNAP_LEGATO, DR_SNAP_PAD - 1) : 0.0f;
 }
-static float snap_dip(int s)
-{
-    return s <= 50 ? 0.15f * (float)s * 0.02f : 0.15f + 0.85f * (float)(s - 50) * 0.02f;
-}
+static float snap_dip(int s) { return s < DR_SNAP_PAD ? 0.0f : 1.0f; }
+static float snap_up(int s) { return snap_dip(s); }
+static float snap_rel(int s) { return s < DR_SNAP_PAD ? 0.15f : 0.15f - 0.11f * snap_part(s, DR_SNAP_PAD, 100); }
+static float snap_att(int s) { return s < DR_SNAP_PAD ? 0.25f : 0.25f - 0.19f * snap_part(s, DR_SNAP_PAD, 100); }
 static void chord_swap(void)                     /* the bottom of the dip: each drone starts for its new notes */
 {
     int g;
@@ -1547,10 +1545,10 @@ static void chord_levels(void)
     ch_pt[0] = 1.0f - ch_u * e;                  /* the fifth, on top of that */
     ch_lv[1] = 1.0f - fm_maxf(ch_a, ch_u) * e;   /* the third and the top */
 }
-/* Snap over 50 cuts the reverb's and the delay's tails at a change too, all of them at 100: their wet dips with the
+/* Snap's pad part cuts the reverb's and the delay's tails at a change too, all of them at 100: their wet dips with the
  * release and the tails shorten, so the old chord doesn't ring on through the new one (rendered with the starting
  * sound's long reverb, Snap 100 had measured no dip at all at the output, 25 dB dry) */
-static float snap_cut(int s) { return s <= 50 ? 0.0f : (float)(s - 50) * 0.02f; }
+static float snap_cut(int s) { return s < DR_SNAP_PAD ? 0.0f : snap_part(s, DR_SNAP_PAD - 1, 100); }
 static float chord_cut(void) { return ch_dir ? ch_k * fm_minf(ch_e, 1.0f) : 0.0f; }
 static void chord_go(int on, int snap)
 {
@@ -1569,9 +1567,9 @@ static void chord_go(int on, int snap)
         ch_k = snap_cut(snap);
         ch_dir = 1;
     } else {                                     /* no release, or nothing heard: at once */
-        chord_swap();
-        ch_a = now_a;
+        ch_a = now_a;                            /* (before the swap: it reads ch_u) */
         ch_u = now_u;
+        chord_swap();
         ch_e = now_a > 0.0f || now_u > 0.0f ? 1.0f : 0.0f;
         ch_dir = ch_e > 0.0f ? 2 : 0;
     }

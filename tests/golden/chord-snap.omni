@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# the same-samples check (tools/same_samples.py): chord changes on the Live page at Snap 0 (a slow glide), 50 (the
-# upper voices release and come back in, the bass glides) and 100 (at once, the reverb's and delay's tails cut).
+# the same-samples check (tools/same_samples.py): chord changes on the Live page at Snap 0 (a wash, a slow glide), 50
+# (legato, a short glide) and 100 (a pad's attack, the reverb's and delay's tails cut).
 # Not a test of its own.
 notips
 tap PLAY

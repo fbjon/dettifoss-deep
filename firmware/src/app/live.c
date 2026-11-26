@@ -10,7 +10,7 @@
  *   SEL + the lit root   the chord let go: the drones back to the sound's own pitches
  *   OCT- / OCT+    the chords an octave down / up (-1 .. +1)
  *   KNOB 1-4       Dark-Bright, Thickness, Motion, Space (the live macros, a sound's)
- *   ALGORITHM      Snap: how a change lands, a 4 s glide at 0 .. a new attack at 100
+ *   ALGORITHM      Snap: how a change lands: a wash (a slow glide) .. legato (a short one) .. a pad's attack
  *
  * A chord is a bass and three tones over it: drone I's main note the bass, its partner the fifth, drone II's main
  * the third (or the sus), its partner the extension (or the root two octaves up), so Thickness, turned down, takes the
@@ -159,7 +159,7 @@ static void live_snap(int32_t e)               /* ALGORITHM on the page: Snap */
 {
     int v = (int)lv.snap + (int)e * 5;
     lv.snap = (uint8_t)(v < 0 ? 0 : v > 100 ? 100 : v);
-    scopy(ui.glab[0], "SNAP");
+    scopy(ui.glab[0], lv.snap < DR_SNAP_LEGATO ? "SNAP: WASH" : lv.snap < DR_SNAP_PAD ? "SNAP: LEGATO" : "SNAP: PAD");
     itoa_u(lv.snap, ui.glab[1]);
     ui.glab_until = plat_ms() + 1500u;
     ui.act_t = plat_ms();
