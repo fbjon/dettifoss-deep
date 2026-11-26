@@ -3,6 +3,7 @@
 # drone II on A3, Wander (par78) fast on its minor pentatonic (par81 0), Pitch glide (par50) a little: on LMY (par110
 # 7, the 12-note keys: LMY's own intervals), then 31-tone (3, the nearest to the pure ones); then Chord (A4, w9) on
 # Just (5, pure over drone I) and on Partch (10). The Setup 2 page on LMY. Not a test of its own (no expectations).
+page 0
 notips
 set 74 0
 set 51 0
@@ -20,7 +21,7 @@ spin K1 1
 spin K1 -1
 wait 300
 shot tunings-setup.png
-tap HOME
+tap SEL+HOME
 wav tunings.wav
 set 78 85
 wait 8000

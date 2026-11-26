@@ -1,5 +1,6 @@
 # MIDI CLOCK IN (v0.3, step 3): the tempo and the jitter of a clock from a DAW, as the test build shows them.
 # clkbpm is the tempo x 10, clkjit / clkmax the jitter (RMS / largest) in us
+page 0
 tap PLAY
 wait 500
 # a steady 120 BPM: two beats to settle, then on the tempo, no jitter
@@ -92,7 +93,7 @@ expect par102 10
 wait 2000
 expect dlyt >11900
 expect dlyt <12100
-tap HOME
+tap SEL+HOME
 # SCENE TIME in bars (Scene bars, 103: 2 = 4 bars), landing on a bar line: a scene change lasts the rest of this bar
 # and three more, 3 .. 4 bars at 100 BPM (7.2 .. 9.6 s)
 expect par103 2

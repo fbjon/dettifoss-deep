@@ -1,17 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# the same-samples check (tools/same_samples.py): the progression page (SEL + HOME twice) at Snap 100, stepped with
+# the same-samples check (tools/same_samples.py): the progression page (HOME on the Live page) at Snap 100, stepped with
 # F3 both ways: REST (a tap steps, held the chord rests) and HOLD (held the chord plays, let go it rests).
 # Not a test of its own.
 notips
 tap PLAY
 wait 1500
-press SEL
-tap HOME
-release SEL
 wait 300
-press SEL
 tap HOME
-release SEL
 turn ALGO 10
 wait 2500
 wav progression-rest.wav

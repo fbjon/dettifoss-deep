@@ -3,6 +3,7 @@
 # steps on the equal ones ("12\19"), ratios on the rest ("3/2"). Drone I near D3, drone II near A3, each landed on
 # the Tuning's notes (a click up and back); partners +5th and +M3 (par3, par24); Shift (par80) so many notes up.
 # On 19-tone (par110 2), Harmonics (6), Harrison (8): Pitch, Partner, Pitch moves. Not a test of its own.
+page 0
 notips
 set 74 0
 set 51 0
@@ -43,7 +44,7 @@ tap SEQ
 set 0 5000
 set 21 5700
 set 110 6
-tap HOME
+tap SEL+HOME
 page 1
 spin K1 1
 page 0
@@ -74,7 +75,7 @@ tap SEQ
 set 0 5000
 set 21 5700
 set 110 8
-tap HOME
+tap SEL+HOME
 page 1
 spin K1 1
 page 0

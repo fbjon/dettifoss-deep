@@ -3,6 +3,7 @@
 # the FM-1 asks RESTORE FROM USB? on the banner: SEL yes, HOME no, a minute without either no; while it asks, the
 # panel does nothing else (a knob turned is dropped, HOME doesn't change the page). The flash's side, cut anywhere:
 # tests/storage_test.c
+page 0
 notips
 # the starting sound's cutoffs and levels before 2026-11-08 (the expectations below were made on them)
 set 7 700

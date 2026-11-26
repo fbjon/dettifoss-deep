@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # a room setting (Fade, Morph, Scene time on Setup 1) turned after a Preset is tapped leaves the sound the Preset's:
 # no "changed" (scenes don't keep them); a sound's knob does change it (the 0.3 performer review)
+page 0
 notips
 set 71 0
 tap PLAY

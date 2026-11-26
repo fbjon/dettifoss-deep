@@ -1,5 +1,6 @@
 # Wander comes with a scene, Pitch lock on too (Evan, 2026-11-08 / 11-10): P13 Telegraph has Wander, P16 Bare none;
 # par71 Scene time (0: 0.1 s), par74 Pitch lock, par78 Wander; 'wander' is drone II's move by it (cents)
+page 0
 notips
 set 71 0
 set 74 1

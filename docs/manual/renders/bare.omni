@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # A recipe's steps, checked (tools/make_manual.py --renders; nothing to see or hear: the expects are the point): from P16, headphones, Pitch lock off, Scene time 0.
+page 0
 notips
 phones 1
 set 74 0
@@ -17,7 +18,7 @@ press SEL
 tap PLAY
 release SEL
 wait 4000
-tap HOME
+tap SEL+HOME
 turn K3 1 60
 wait 2500
 turn K3 -1 60

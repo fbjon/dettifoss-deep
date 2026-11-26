@@ -2,6 +2,7 @@
 # 2026-10-30, after #61's glide-and-land: every detent moves the pitch, and the card shows the note it goes to).
 # Drone I's pitch (par0, cents over MIDI 0; D3 5000); the host's spin turns its detents at once: a first turn, no
 # speed-up
+page 0
 set 74 0
 set 51 0
 tap PLAY
@@ -40,7 +41,7 @@ spin K1 1
 expect par110 1
 # ... a detent is a quarter tone, and the new Tuning let SEL's +3 go (Evan, 2026-11-07): from 5503 to the next
 # quarter tone, 5550
-tap HOME
+tap SEL+HOME
 page 1
 spin K1 1
 page 0
@@ -53,7 +54,7 @@ spin K1 1
 spin K1 1
 spin K1 1
 expect par110 5
-tap HOME
+tap SEL+HOME
 page 1
 spin K1 -4
 page 0
@@ -74,7 +75,7 @@ expect par21 5586
 tap GLO
 spin K1 -1
 expect par110 4
-tap HOME
+tap SEL+HOME
 page 1
 spin K1 2
 page 0
@@ -87,7 +88,7 @@ spin K1 1
 spin K1 1
 spin K1 1
 expect par110 7
-tap HOME
+tap SEL+HOME
 set 0 6402
 page 1
 spin K1 1
@@ -119,7 +120,7 @@ expect par0 6402
 tap GLO
 spin K1 -1
 expect par110 6
-tap HOME
+tap SEL+HOME
 page 1
 spin K1 1
 page 0
@@ -131,7 +132,7 @@ spin K1 1
 spin K1 1
 spin K1 1
 expect par110 9
-tap HOME
+tap SEL+HOME
 page 1
 spin K1 1
 page 0
@@ -146,7 +147,7 @@ expect par21 5604
 tap GLO
 spin K1 -1
 expect par110 8
-tap HOME
+tap SEL+HOME
 page 1
 spin K1 1
 page 0
@@ -160,7 +161,7 @@ tap GLO
 spin K1 1
 spin K1 1
 expect par110 10
-tap HOME
+tap SEL+HOME
 page 1
 spin K1 2
 page 0
@@ -171,7 +172,7 @@ expect par110 0
 spin K1 -1
 expect par110 10
 spin K1 1
-tap HOME
+tap SEL+HOME
 # Pitch link on (par45): drone II's knob turns the link offset (par46), a step of the grid's intervals: a fifth
 # (700) up one: 800
 set 45 1
@@ -189,7 +190,7 @@ tap GLO
 tap GLO
 set 110 2
 expect par110 2
-tap HOME
+tap SEL+HOME
 press SEL
 tapkey w8
 release SEL

@@ -607,17 +607,26 @@ int main(int argc, char **argv)
         if (!strcmp(cmd, "wait"))
             run_ms((uint32_t)atoi(a));
         else if (!strcmp(cmd, "press") || !strcmp(cmd, "release") || !strcmp(cmd, "tap")) {
-            int i = find_name(BTN_N, NB, a);
-            if (i < 0) {
+            /* a button, or two at once ("SEL+HOME": both down and up together) */
+            char *plus = strchr(a, '+');
+            int i, i2 = -1;
+            uint32_t m;
+            if (plus && plus[1]) {                  /* (OCT+ is one) */
+                *plus = 0;
+                i2 = find_name(BTN_N, NB, plus + 1);
+            }
+            i = find_name(BTN_N, NB, a);
+            if (i < 0 || (plus && plus[1] && i2 < 0)) {
                 printf("line %d: no button %s\n", lineno, a);
                 return 2;
             }
+            m = 1u << i | (i2 >= 0 ? 1u << i2 : 0u);
             if (cmd[0] != 'r')
-                held_btn |= 1u << i;
+                held_btn |= m;
             if (cmd[0] == 't')
                 run_ms(40);
             if (cmd[0] != 'p')
-                held_btn &= ~(1u << i);
+                held_btn &= ~m;
             run_ms(cmd[0] == 't' ? 40 : 2);
         } else if (!strcmp(cmd, "key") || !strcmp(cmd, "tapkey")) {
             int k = key_of(a);

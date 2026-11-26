@@ -4,11 +4,12 @@
 # down at a medium speed, a quick spin up, then fine tuning with SEL held. Every part should sound like
 # a continuous slide through the notes, never stairs.
 # Pitch lock off (on at start since 2026-10-19): these move the pitch
+page 0
 set 74 0
 tap EDIT
 tap EDIT
 spin K4 -100
-tap HOME
+tap SEL+HOME
 spin K2 20
 wav sweep.wav
 tap PLAY

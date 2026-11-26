@@ -2,6 +2,7 @@
 # the same-samples check (tools/same_samples.py): a drone out on its own. HOME + PLAY fades drone I out and in (0.3.1),
 # beside drone II's SEL + PLAY; from another page HOME's hold is a peek, so the page stays; both out is one badge;
 # a knob of a drone that's out says how to bring it back. Not a test of its own (no expectations: main's build plays this script too).
+page 0
 notips
 phones 1
 set 74 0

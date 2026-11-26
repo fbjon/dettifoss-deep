@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # A recipe's render (tools/make_manual.py --renders): from P1, headphones, Pitch lock off.
 # "# @" marks the listening times (tools/make_manual.py --times).
+page 0
 notips
 phones 1
 set 74 0

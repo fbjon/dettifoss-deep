@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* THE LIVE PAGE (SEL + HOME; again: the progression, and again to leave): chords on the keys, played with one hand, over the drone.
+/* THE LIVE PAGE (HOME, where the FM-1 starts; HOME again: the progression, and back): chords on the keys, played with
+ * one hand, over the drone.
  *
  *   F3 .. E4       the twelve roots, latching: a tap plays that chord, its key lit while it sounds
  *   F#4 .. F#5     the modifiers, on the black keys above: Minor, Sus2, Sus4, 7, Maj7, Add9. A tap arms or
@@ -17,14 +18,16 @@
  * extension away first, then the third, then the fifth. Dark-Bright past +-50 moves the upper two tones an octave
  * (back inside +-40).
  *
- * THE PROGRESSION (SEL + HOME on the Live page; again to leave): a progression's chords stepped through, the keys above
- * free for a lead (not yet):
+ * THE PROGRESSION (HOME on the Live page; HOME again: the chords): a progression's chords stepped through, the keys
+ * above free for a lead (not yet):
  *
- *   F3 / F#3       the next / the previous chord, both always lit, taking turns at full each 0.5 s. Two ways (SEL + F3):
- *                  REST: a tap steps; held, the chord is released, and letting go brings in the next (air between).
+ *   F3 / F#3       the next / the previous chord, both always lit, taking turns at full each 0.5 s. Two ways
+ *                  (SEL + F3): REST: a tap steps; held, the chord is released, and letting go brings in the next (air between).
  *                  HOLD: held, the chord plays; let go, it's released, and the next hold brings in the next.
  *                  While a chord rests the drones move to the next one's notes, so it comes in on them
  *   OCT, the knobs, ALGORITHM   as on the Live page
+ *
+ * SEL + HOME, on either, opens Niagara Drift's Drones and Pitch pages (again: the other), till the sound has its own.
  *
  * For now the progression is the demo's: C, Am, Fmaj7, G7, C. Part of ui.c's unity build (after look.c) */
 
@@ -175,21 +178,17 @@ static void pg_keys(uint32_t keys, uint32_t ch)
     }
 }
 
-static void live_toggle(void)
+static void live_home(void)                    /* HOME: back to the Live page as it was, and on it the other */
 {
-    if (ui.view == V_LIVE && !lv.prog) {
-        lv.prog = 1;
-        lv.to = -1;
-        say("PROGRESSION", lv.hold ? "HOLD TO PLAY" : "HOLD TO REST");
-    } else if (ui.view == V_LIVE) {
-        lv.prog = 0;
-        lv.to = -1;
-        set_view(V_PLAY);
-        say("LIVE", "OFF");
-    } else {
+    lv.to = -1;
+    if (ui.view == V_LIVE)
+        lv.prog ^= 1u;
+    else
         set_view(V_LIVE);
+    if (lv.prog)
+        say("PROGRESSION", lv.hold ? "HOLD TO PLAY" : "HOLD TO REST");
+    else
         say("LIVE", "CHORDS ON THE KEYS");
-    }
 }
 
 static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */

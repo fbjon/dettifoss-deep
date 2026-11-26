@@ -2,6 +2,7 @@
 # A recipe's render (tools/make_manual.py --renders): from P2 Embers, headphones, Pitch lock off, Scene time 0. Evan's
 # moves (2026-11-13), quickly: Osc/Sb to the sub, the sub to -4 oct, drone I's pitch down to 20.6 Hz, its level to 50
 # so the clicks are percussion under drone II; then the clicks, held. "# @" marks the listening times (--times).
+page 0
 notips
 phones 1
 set 74 0
@@ -21,10 +22,10 @@ tapkey b1
 tapkey b1
 tapkey b1
 tapkey b1
-tap HOME
-tap HOME
+tap SEL+HOME
+tap SEL+HOME
 turn K1 -34 50
-tap HOME
+tap SEL+HOME
 turn K1 -34 40
 # @ Clicks, about 2.6 a second, as percussion under drone II's blooming triangle
 wait 12000

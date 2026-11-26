@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # the screen reader (Charles Vestal's fm1-reader, announce.c; issue #87): a reader listens, and the screen, each page,
 # a knob turning, a key hint changing, a banner, PLAY and stop, a Preset tapped and the SEL key map are said
+page 0
 niagara
 notips
 wait 300
@@ -17,7 +18,7 @@ said Drone_1_Cutoff
 tapkey b2
 wait 100
 said Drone_1_band-pass_filter,_A#3_for_high-pass
-tap HOME
+tap SEL+HOME
 wait 500
 said Pitch_page._Drone_1:_Pitch_D3
 # a banner, in words: hard sync (D#5)

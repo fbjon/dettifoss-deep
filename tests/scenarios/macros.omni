@@ -5,6 +5,7 @@
 # cross-mod, 60-62 the delay's time, repeats, mix, 66 the delay LFO's depth, 17 drone I's filter LFO depth, 77
 # Character; 78 Wander, 79 Age, 80 Shift's move, 81 Wander's scale; 90-93 the keys' latches.
 # the starting sound's cutoffs and levels before 2026-11-08 (the expectations below were made on them)
+page 0
 niagara
 set 7 700
 set 28 680
@@ -98,7 +99,7 @@ tap SEQ
 expect view 9
 spin K1 -12
 expect par80 200
-tap HOME
+tap SEL+HOME
 key w13 down
 spin ALGO 2
 spin ALGO -2
@@ -214,6 +215,7 @@ expect heard63 >60
 tap SAVE
 wait 500
 reboot
+page 0
 wait 5000
 expect par93 100
 expect heard63 >60

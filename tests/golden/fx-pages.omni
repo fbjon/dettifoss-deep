@@ -3,6 +3,7 @@
 # at rest, KNOB 4 in two halves (Dly mix, "+ SEL Type"); SEL + KNOB 4 turning the delay's type, its lower half lit
 # and only Mix dim; Reverb with its type on KNOB 3 and "+ SEL Into" under Rev mix, then SEL + KNOB 4 turning what
 # goes into it. Not a test of its own (no expectations).
+page 0
 notips
 tap PLAY
 wait 2000

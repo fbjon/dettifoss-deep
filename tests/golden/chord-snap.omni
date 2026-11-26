@@ -5,9 +5,6 @@
 notips
 tap PLAY
 wait 1500
-press SEL
-tap HOME
-release SEL
 wait 600
 wav chord-snap.wav
 turn ALGO -10

@@ -3,6 +3,7 @@
 # 2026-10-28): the sub mixed in on both drones, then drone I's and drone II's subs through Sine, Triangle and Saw (each
 # as loud as the square); the swaps glide (no click). The page at rest, and with SEL turning drone II's. Not a test of
 # its own (no expectations).
+page 0
 notips
 tap PLAY
 wait 1500

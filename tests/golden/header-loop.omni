@@ -2,6 +2,7 @@
 # the same-samples check (tools/same_samples.py): the header with the motion loop playing and a gesture (0.3.1): on
 # PITCH MOVES, the longest page name, LOOP gives way while the gesture shows and comes back once it's gone.
 # No expectations (main's build plays this script too).
+page 0
 notips
 tap PLAY
 wait 1500

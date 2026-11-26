@@ -5,6 +5,7 @@
 # (2), Harmonics (6): the partners on each Tuning's fifth; then Shift latched (E5, w13): its +700c is no note of LMY or
 # 19-tone, so it moves 700c; a click down (Pitch moves' KNOB 1) lands on 19-tone's note, "+5th" (695c). The Partner
 # page on 19-tone ("+5th", no "just"), Pitch moves on LMY. Not a test of its own.
+page 0
 notips
 set 74 0
 set 51 0

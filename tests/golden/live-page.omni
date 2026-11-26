@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# the same-samples check (tools/same_samples.py): the Live page (SEL + HOME; twice more, through the progression, to
-# leave): chords on the keys, the modifiers armed for the next chord, a bass set apart and let go, the octave, Snap,
+# the same-samples check (tools/same_samples.py): the Live page (where the FM-1 starts; HOME to the progression, SEL +
+# HOME to leave): chords on the keys, the modifiers armed for the next chord, a bass set apart and let go, the octave, Snap,
 # the live macros on the knobs. Not a test of its own.
 notips
 tap PLAY
 wait 1500
-press SEL
-tap HOME
-release SEL
 wait 600
 expect view 15
 shot live-empty.png
@@ -58,9 +55,7 @@ release SEL
 wait 2500
 shot live-off.png
 wavstop
-press SEL
 tap HOME
-release SEL
 wait 600
 expect view 15
 press SEL
