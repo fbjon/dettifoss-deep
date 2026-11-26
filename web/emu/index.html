@@ -106,6 +106,9 @@ a { color: var(--accent); }
 .bar .state, .turn { background: var(--black); color: var(--ink); padding: .4em 1em; border-radius: 999px; font: 500 .85rem/1.4 var(--mono); }   /* a band may pass behind */
 .bar button { font: 600 .95rem "Inter Tight", sans-serif; color: var(--black); background: var(--pale); border: 0; padding: .45em 1.1em; border-radius: 999px; cursor: pointer; }
 .bar .cpu { font-variant-numeric: tabular-nums; }
+/* which build this is (web/emu/build.sh writes it): a page saved on the disk is told apart by it */
+.bar .build { background: var(--black); color: var(--ink); padding: .4em 1em; border-radius: 999px; font: 500 .75rem/1.4 var(--mono); opacity: .8; }
+.bar .build:empty { display: none; }
 /* after Switch on, until PLAY is first pressed: what to do next (first-time visitors stalled at "stopped") */
 .playhint { background: var(--pale); color: var(--black); padding: .4em 1em; border-radius: 999px; font: 600 .9rem/1.4 "Inter Tight", sans-serif; }
 .playhint kbd { font: 500 .85em var(--mono); background: transparent; color: var(--black); border: 1.5px solid var(--black); border-radius: 5px; padding: 0 .35em; }
@@ -409,6 +412,7 @@ header nav { z-index: 6; }
   <span class="playhint" id="playhint" role="status" hidden>Press <kbd>PLAY</kbd> to start the drones</span>
   <span class="turn">Turn your phone sideways for bigger keys</span>
   <a class="keys-link" href="#keys">Computer keys ↓</a>
+  <span class="build" id="build"><!--BUILD--></span>
   <button id="remote" type="button" hidden title="Play this emulator from an FM-1 on USB: its keys, buttons and knobs play here, and its lights show this one's">Play from your FM-1</button>
   <button id="reset" type="button" aria-label="Factory reset" title="Factory reset: forget your sound and scenes, and start again from the factory settings">Reset</button>
 </div>
@@ -875,8 +879,13 @@ async function switchOn() {
     if (navigator.audioSession) navigator.audioSession.type = "playback";
     const ac = new AudioContext({ sampleRate: 44100, latencyHint: "interactive" });
     ac.resume();
-    const [wasm] = await Promise.all([fetch("omni.wasm").then((r) => { if (!r.ok) throw new Error(`omni.wasm: ${r.status}`); return r.arrayBuffer(); }),
-                                      ac.audioWorklet.addModule("worklet.js")]);
+    // a page packed into one file (tools/pack_emu.py) carries the wasm and the worklet, so it opens from the disk:
+    // file:// can't fetch, and Chrome loads a worklet there only from a data: URL (not a file, not a blob)
+    const inl = window.OMNI_INLINE;
+    const [wasm] = await Promise.all([
+      inl ? Uint8Array.from(atob(inl.wasm), (c) => c.charCodeAt(0)).buffer
+          : fetch("omni.wasm").then((r) => { if (!r.ok) throw new Error(`omni.wasm: ${r.status}`); return r.arrayBuffer(); }),
+      ac.audioWorklet.addModule(inl ? "data:text/javascript;base64," + inl.worklet : "worklet.js")]);
     node = new AudioWorkletNode(ac, "omni", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
     node.connect(ac.destination);
     const ready = new Promise((res) => {

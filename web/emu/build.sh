@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # OMNI in the browser: the host simulator compiled to WebAssembly (Emscripten), plus its page.
 #   [OM_VERSION=0.1] web/emu/build.sh  ->  build/emu/{index.html, worklet.js, og.png, omni.wasm, fonts/}
+#   and build/emu/dettifoss-deep-emu-BRANCH-COMMIT.html, all of it in one file that opens from the disk
 # Same sources and flags as host/build_host.sh (-ffp-contract=off, like the device).
 set -e
 cd "$(dirname "$0")/../.."
@@ -14,6 +15,7 @@ emcc -O2 -ffp-contract=off -std=gnu99 -Wall -Wno-unused-function -Wno-unused-par
     -o build/emu/omni.wasm web/emu/omni_web.c firmware/src/dsp/drone.c
 cp web/emu/index.html web/emu/worklet.js web/emu/og.png build/emu/
 mkdir -p build/emu/fonts && cp web/emu/fonts/* build/emu/fonts/
+python3 tools/pack_emu.py build/emu           # stamps the build on the page, and packs it into one file
 python3 tools/make_ja.py build/emu >/dev/null   # the front page in Japanese, build/emu/ja
 python3 tools/make_manual.py build/emu       # the manual's pages, build/emu/manual (its sounds once rendered:
                                               # tools/make_manual.py --renders)
