@@ -692,6 +692,7 @@ void dr_chord(int g, int main_c, int iv_c, int pon)
     post(C_CHORD, g * 4 + 2, pon);
 }
 void dr_chord_go(int on, int snap) { post(C_CHORD_GO, snap < 0 ? 0 : snap > 100 ? 100 : snap, on); }
+void dr_chord_rest(int snap) { post(C_CHORD_GO, snap < 0 ? 0 : snap > 100 ? 100 : snap, 2); }   /* (go's: 2 a rest) */
 
 /* ----------------------------------------------------------------- state --- */
 volatile float dr_level[DR_NGROUPS];
@@ -970,6 +971,14 @@ static float fade_rate(void)                      /* per sample: 0.05 s * 1200^(
 static void fx_clear(void);                      /* drone_fx.c, included below */
 static void macro_reset(void);                   /* the macros' moves at rest (below) */
 
+/* a rest (dr_chord_rest): the chord's notes released (cr.g, 1 .. 0, cr.g0 where the block began, cr.gr a sample's
+ * step), the next notes (sent before it) taken up once they're quiet, so the change lands near them (cr.rp: not yet) */
+static struct {
+    float g, g0, gr, q0, q;                      /* q: the attack times the rest's */
+    uint8_t rest, rp;
+} cr = {1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0, 0};
+#define CH_REST_TAKE 0.3f                        /* how quiet before the notes move to the next chord */
+#define CH_REST_GLIDE 300.0f                     /* ... and over how long, ms */
 void dr_init(void)
 {
     int i, g;
@@ -1007,6 +1016,9 @@ void dr_init(void)
     ch_bp = 0;
     ch_pa = ch_pa0 = 1.0f;
     ch_pr = 0.0f;
+    cr.g = cr.g0 = cr.q = cr.q0 = 1.0f;
+    cr.gr = 0.0f;
+    cr.rest = cr.rp = 0;
     rng = 0x12345678u;                           /* the random ones from the same start: every init sounds the same */
     lfo_seed = 0x9E3779B9u;
     lfo_ph = lfo_s[0] = lfo_s[1] = 0.0f;
@@ -1568,11 +1580,40 @@ static void chord_swap(void)                     /* each drone starts for its ne
  * reverb, a change at Snap 100 had measured no dip at all at the output, 25 dB dry) */
 static float snap_cut(int s) { return s < DR_SNAP_PAD ? 0.0f : snap_part(s, DR_SNAP_PAD - 1, 100); }
 static float chord_cut(void) { return ch_k * ch_pr; }
-static void chord_go(int on, int snap)
+static float snap_rel(int s) { return s < DR_SNAP_LEGATO ? 1.5f : s < DR_SNAP_PAD ? 0.6f : snap_brel(s); }
+static void chord_rest(int snap)
 {
+    if (!ch_on)
+        return;
+    cr.rest = cr.rp = 1;
+    cr.gr = -1.0f / (snap_rel(snap) * DR_SR);
+    if (fade <= 0.0f)
+        cr.g = cr.g0 = 0.0f;
+}
+static void chord_go(int on, int snap)            /* on: 0 let go, 1 the chord sent, 2 a rest */
+{
+    if (on == 2) {
+        chord_rest(snap);
+        return;
+    }
+    const int moved = cr.rest && !cr.rp;         /* after a rest, its notes already where they're going */
     ch_on = (uint8_t)on;
     ch_ms = snap_ms(snap);
     mac_dirty = 1;                               /* the voicing under a chord (macro_apply) */
+    if (cr.rest) {                               /* back in from the rest: over the attack */
+        cr.rest = cr.rp = 0;
+        cr.gr = 1.0f / ((snap >= DR_SNAP_PAD ? snap_att(snap) : 0.25f) * DR_SR);
+        if (moved || fade <= 0.0f) {             /* (other notes than the rest took: there from near silence) */
+            if (fade <= 0.0f)
+                cr.g = cr.g0 = 1.0f;
+            chord_swap();
+            return;
+        }
+        if (snap >= DR_SNAP_PAD) {               /* not quiet yet: a pad's change from where the release got to */
+            ch_pa *= cr.g;
+            cr.g = 1.0f;
+        }
+    }
     chord_swap();
     if (snap >= DR_SNAP_PAD && fade > 0.0f) {    /* a pad's: the old notes into the bridge voices, the new ones in */
         ch_prev = ch_pa0 + (ch_pa - ch_pa0);     /* (where the last attack had got to: the old notes' level) */
@@ -1586,14 +1627,31 @@ static void chord_go(int on, int snap)
         ch_pa = ch_pa0 = 1.0f;
     }
 }
-static void chord_run(uint32_t n)                /* the attack and the release, a block on */
+static void rest_run(uint32_t n)                 /* a rest's release, or its way back in (in the flash) */
+{
+    cr.g = fm_clampf(cr.g + (float)n * cr.gr, 0.0f, 1.0f);
+    if (cr.g >= 1.0f)
+        cr.gr = 0.0f;
+    if (cr.rp && cr.g < CH_REST_TAKE) {          /* quiet enough: to the next chord's notes */
+        cr.rp = 0;
+        ch_ms = CH_REST_GLIDE;
+        chord_swap();
+    }
+}
+static void chord_run(uint32_t n)                /* the attack, the release and a rest's, a block on */
 {
     ch_pa0 = ch_pa;
+    cr.g0 = cr.g;
+    if (cr.gr != 0.0f)
+        rest_run(n);
     if (ch_pa < 1.0f)
         ch_pa = fm_minf(ch_pa + (float)n * (1.0f / (ch_pat * DR_SR)), 1.0f);
     if (ch_pr > 0.0f)
         ch_pr = fm_maxf(ch_pr - (float)n * (1.0f / (ch_brel * DR_SR)), 0.0f);
+    cr.q0 = ch_pa0 * cr.g0;
+    cr.q = ch_pa * cr.g;
 }
+DR_FAR_FN(void, chord_run, (uint32_t))          /* (in the flash: a block's, and the RAM is full) */
 /* a bridge voice for an old note of drone g, at level amp (released over rel seconds): a free one, or the quietest */
 static void xv_take(int g, float note, float amp, float rel, int tri)
 {
@@ -1700,7 +1758,7 @@ static void drain(void)
             }
             break;
         case C_CHORD_GO:
-            chord_go(b != 0, a);
+            chord_go(b, a);
             break;
         case C_VOICE:
             if (a < DR_NGROUPS)
@@ -2194,6 +2252,24 @@ static inline float route_at(const grp_t *v, int i, uint32_t t)
 
 /* the bridge voices sounding through drone g, a tick (m samples) into xbr: its wave, the pitch's shift (Tune, the
  * LFO, a macro's) as the drone's own; each releasing (its level squared, so the end is soft) */
+static void bridge_take(int g, float omix, float ival, float detune)   /* a pad's change: drone g's old notes */
+{
+    grp_t *const v = &grp[g];
+    const float og0 = (0.9f - 0.28f * v->pe) * omix * ch_prev, iv0 = (v->cia ? v->civ : ival) + detune;
+    ch_bp &= (uint8_t)~(1u << g);
+    if (v->gf > 0.0f) {
+        xv_take(g, v->ps2, og0, g ? ch_brel : 0.04f, 0);
+        if (v->pe > 0.0f)
+            xv_take(g, v->ps2 + iv0, og0 * v->pe * v->ig, ch_brel, 0);
+        if (v->ly > 0.0f) {                      /* Thickness's octave too */
+            if (g)
+                xv_take(g, v->ps2 + 12.0f, og0 * v->ly * LY_LVL, ch_brel, 1);
+            if (v->pe > 0.0f)
+                xv_take(g, v->ps2 + iv0 + 12.0f, og0 * v->pe * v->ig * v->ly * LY_LVL, ch_brel, 1);
+        }
+    }
+}
+DR_FAR_FN(void, bridge_take, (int, float, float, float))
 static void bridge_tick(int g, int wi, float wf, float pw, float shift, uint32_t m)
 {
     const float ly = grp[g].ly * LY_LVL;
@@ -2244,7 +2320,7 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
     const float pw = 0.5f - 0.45f * pv[GP_WIDTH] * 0.01f;
     /* OSC MIX: an equal-power crossfade from the oscillators (main + partner) to the sub */
     const float mix = pv[GP_MIX] * 0.01f;
-    const float omix = fm_sqrtf(1.0f - mix), sub = 0.8f * fm_sqrtf(mix);
+    const float omix = fm_sqrtf(1.0f - mix), sub = 0.8f * fm_sqrtf(mix) * cr.g;   /* (a rest's too: the bass's) */
     /* NOISE: a level added to the oscillators, as a synth's mixer (they stay as they are): 100 is as loud as
      * they are, 50 -6 dB, 25 -12 (a straight level: heard all along the knob); its colour's shelves
      * (g) and the loudness made up for them. White from the generator is +-1, RMS 1/sqrt 3 */
@@ -2360,21 +2436,8 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
         /* time constant gs/4 reaches 98 % in gs */
         glide_k = gs > 0.0f ? 1.0f - fm_expf(-(float)CR / (gs * 0.25f * DR_SR)) : 1.0f;
     }
-    if (ch_bp >> g & 1u) {                       /* a pad's change: the old notes go on in bridge voices, releasing */
-        const float og0 = (0.9f - 0.28f * v->pe) * omix * ch_prev, iv0 = v->cia ? v->civ : ival;
-        ch_bp &= (uint8_t)~(1u << g);
-        if (v->gf > 0.0f) {
-            xv_take(g, v->ps2, og0, g ? ch_brel : 0.04f, 0);
-            if (v->pe > 0.0f)
-                xv_take(g, v->ps2 + iv0 + detune, og0 * v->pe * v->ig, ch_brel, 0);
-            if (v->ly > 0.0f) {                  /* Thickness's octave too */
-                if (g)
-                    xv_take(g, v->ps2 + 12.0f, og0 * v->ly * LY_LVL, ch_brel, 1);
-                if (v->pe > 0.0f)
-                    xv_take(g, v->ps2 + iv0 + detune + 12.0f, og0 * v->pe * v->ig * v->ly * LY_LVL, ch_brel, 1);
-            }
-        }
-    }
+    if (ch_bp >> g & 1u)                         /* a pad's change: the old notes go on in bridge voices, releasing */
+        DR_FAR(bridge_take)(g, omix, ival, detune);
     if (v->gf <= 0.0f && v->gtarget <= 0.0f) {
         int q;
         v->peak = 0.0f;
@@ -2509,8 +2572,8 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
         inc = note_inc(v->ps2 + tune + pmod + v->drift[0] * drift_c + chr * (CHR_JIT * v->jit + mm) + mac_p[g]);
         pinc = note_inc(v->ps2 + tune + pmod + mac_p[g] + ival + detune + dw * 0.1f * v->wn[3] + v->drift[1] * drift_c +
                         chr * (CHR_JIT * v->jit + mm));
-        cu = ch_pa0 + (ch_pa - ch_pa0) * ((float)j0 * inv_n);
-        mg = g ? cu : fm_minf(cu * ch_pat * 25.0f, 1.0f);   /* (the bass in over 40 ms, as the old one goes) */
+        cu = cr.q0 + (cr.q - cr.q0) * ((float)j0 * inv_n);   /* the attack, and a rest's release (cr.q) */
+        mg = g ? cu : fm_minf(cu * ch_pat * 25.0f, cr.g);   /* (the bass in over 40 ms, as the old one goes) */
         if (v->ly > 0.0f) {                      /* Thickness's octave follows each note as it sounds */
             ly_note[g][0] = v->ps2;
             ly_note[g][1] = v->ps2 + ival + detune;
@@ -2978,7 +3041,7 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
             sbuf[j] = 0;
         }
         if (fade > 0.0f || fade_target > 0.0f) {
-            chord_run(k);
+            DR_FAR(chord_run)(k);
             for (g = 0; g < DR_NGROUPS; g++)
                 DR_FAR(render_group)(g, k);
             sc_clk += k;

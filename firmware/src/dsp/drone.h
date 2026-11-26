@@ -284,6 +284,9 @@ void dr_seed(uint32_t s);                      /* mix s into the random generato
  * attack (released, at once on the new notes, and in again). While a chord plays, the Pitch knobs and PITCH LINK don't move the drones */
 void dr_chord(int g, int main_c, int iv_c, int pon);
 void dr_chord_go(int on, int snap);
+/* a rest: the chord's notes released (as Snap says: 1.5 s in a wash, 0.6 s legato, 0.6 .. 0.3 s a pad's), and once
+ * they're quiet the drones move to the notes sent since (dr_chord), so the next dr_chord_go comes in on them */
+void dr_chord_rest(int snap);
 #define DR_SNAP_LEGATO 34                      /* Snap's three parts: 0 .. 33 a wash, 34 .. 66 legato, 67 .. 100 a pad's */
 #define DR_SNAP_PAD 67                         /* attack (drone.c, snap_ms) */
 

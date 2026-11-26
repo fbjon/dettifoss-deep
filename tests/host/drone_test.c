@@ -1987,6 +1987,24 @@ int main(void)
         run(secs(2.5f));
         check("chord, Snap 0: a slow glide (part way at 2 s, there by 4.5)", p_mid < 44.0f && p_mid > 42.0f &&
               fabsf(dr_pitch[0] - 41.0f) < 0.01f);
+        before = rms();                             /* a rest, then C at Snap 100: released, the drones moving to C once
+                                                     * quiet, and in again on it */
+        dr_chord(0, 4800, 700, 1);
+        dr_chord(1, 6400, 300, 1);
+        dr_chord_rest(100);
+        run(secs(0.1f));
+        p_mid = dr_pitch[0];
+        run(secs(0.7f));
+        lo = rms();
+        p_end = dr_pitch[0];
+        dr_chord_go(1, 100);
+        run(secs(0.25f));
+        printf("  rest: %.1f dB after 0.8 s; bass %.2f at 0.1 s, %.2f at 0.8 s; back %.1f dB\n",
+               (double)(20.0f * log10f(lo / before)), (double)p_mid, (double)p_end, (double)(20.0f * log10f(rms() / before)));
+        check("chord rest: released (down over 10 dB, the reverb still ringing)", lo < before * 0.32f);
+        check("chord rest: the notes stay while heard, then move to the next", fabsf(p_mid - 41.0f) < 0.01f &&
+              fabsf(p_end - 48.0f) < 0.01f);
+        check("chord rest: in again at its level", rms() > before * 0.7f && fabsf(dr_pitch[1] - 64.0f) < 0.01f);
         dr_chord_go(0, 50);                         /* let go: back to the sound's Pitch, as it is now */
         run(secs(0.8f));
         check("chord let go: back to the Pitch", fabsf(dr_pitch[0] - 30.0f) < 0.01f && fabsf(dr_pitch[1] - 50.0f) < 0.01f);
