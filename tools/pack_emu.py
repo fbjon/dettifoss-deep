@@ -8,7 +8,9 @@ Stamps build/emu/index.html with the build (name, branch, commit, date) and writ
 build/emu/dettifoss-deep-emu-BRANCH-COMMIT.html: the page with omni.wasm, worklet.js and the fonts
 inside it. A page opened from file:// can't fetch its wasm or load a worklet module from a file, so
 the packed page carries them (base64) and its switchOn() takes them from
-window.OMNI_INLINE. The manual's links still point at pages beside it; they need the folder.
+window.OMNI_INLINE. Served, it loads worklet.js from beside it first, as a host's
+Content-Security-Policy may refuse the data: URL: publish worklet.js with it. The manual's links still
+point at pages beside it; they need the folder.
 """
 import base64
 import datetime

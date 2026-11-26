@@ -880,12 +880,16 @@ async function switchOn() {
     const ac = new AudioContext({ sampleRate: 44100, latencyHint: "interactive" });
     ac.resume();
     // a page packed into one file (tools/pack_emu.py) carries the wasm and the worklet, so it opens from the disk:
-    // file:// can't fetch, and Chrome loads a worklet there only from a data: URL (not a file, not a blob)
+    // file:// can't fetch, and Chrome loads a worklet there only from a data: URL (not a file, not a blob).
+    // Served, worklet.js beside the page comes first: a host's Content-Security-Policy may refuse the data: URL
     const inl = window.OMNI_INLINE;
+    const inlWorklet = () => ac.audioWorklet.addModule("data:text/javascript;base64," + inl.worklet);
+    const worklet = inl && location.protocol === "file:" ? inlWorklet()
+      : ac.audioWorklet.addModule("worklet.js").catch((err) => { if (!inl) throw err; return inlWorklet(); });
     const [wasm] = await Promise.all([
       inl ? Uint8Array.from(atob(inl.wasm), (c) => c.charCodeAt(0)).buffer
           : fetch("omni.wasm").then((r) => { if (!r.ok) throw new Error(`omni.wasm: ${r.status}`); return r.arrayBuffer(); }),
-      ac.audioWorklet.addModule(inl ? "data:text/javascript;base64," + inl.worklet : "worklet.js")]);
+      worklet]);
     node = new AudioWorkletNode(ac, "omni", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
     node.connect(ac.destination);
     const ready = new Promise((res) => {
