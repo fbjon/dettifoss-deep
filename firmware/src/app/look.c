@@ -85,12 +85,20 @@ static int32_t lk_ktext_w(const felucca_font_t *f, const char *s);
 
 /* ------------------------------------------------------------ header --- */
 static int live_prog(void);                   /* live.c: the Live page shows the progression */
+static int live_mode(void);                   /* ... the chords' way, P Q R (0..2; -1 the progression) */
+static uint32_t live_sig(void);
+static void lk_live_card(int i, int32_t x, int32_t cx, int on);
 /* a page's name in capitals, its number dropped when the header shows its "1/2" ("Setup 1": SETUP) */
 static void lk_page_name(int v, char *name)
 {
     int i, b;
     if (v == V_LIVE && live_prog()) {
         scopy(name, "PROGRESSION");
+        return;
+    }
+    if (v == V_LIVE) {                         /* "LIVE Q" */
+        scopy(name, "LIVE P");
+        name[5] = (char)('P' + live_mode());
         return;
     }
     for (i = 0; VIEW_NAME[v][i] && i < 19; i++) {
@@ -241,7 +249,7 @@ static void lk_bar(void)
     h = hash(hash(h, (uint32_t)(gest + 1) | (uint32_t)ui.hold_from << 8 |
                          (uint32_t)(line < 0.0f ? 0xFFFu : (uint32_t)(line * 224.0f)) << 12),
              (uint32_t)(gest_pct + 1));
-    h = hash(h, (uint32_t)live_prog());        /* (the Live page's name: PROGRESSION) */
+    h = hash(h, (uint32_t)live_prog() | (uint32_t)live_mode() << 1);   /* (the Live page's name) */
     if (h == ui.sig[0])
         return;
     ui.sig[0] = h;
@@ -2753,6 +2761,7 @@ static void lk_values(void)
                             (uint32_t)gpar(VIEW_KNOB[ui.view][i].g, GP_OLFO_DEST) << 8 |
                             (uint32_t)gpar(VIEW_KNOB[ui.view][i].g, GP_FLFO_DEST) << 9);
     }
+    h = hash(h, ui.view == V_LIVE ? live_sig() : 0u);
     h = hash(h, (uint32_t)clk.shown | (uint32_t)clk.following << 12 | (uint32_t)(dr_ext_spb > 0.0f) << 13);   /* Sync */
     h = hash(h, (uint32_t)proj.par[P_MOVE] | (uint32_t)proj.par[P_XMOD] << 8 | (uint32_t)proj.par[P_LFO_RMOD_SRC] << 12 |
                     (uint32_t)proj.par[P_LFO_W1] << 16 | (uint32_t)proj.par[P_LFO_W2] << 20);
@@ -2775,8 +2784,11 @@ static void lk_values(void)
         char t[16], t2[16], *sp;
         int pre, mode;
         int32_t wb, ws, y;
-        if (p < 0)
+        if (p < 0) {
+            if (ui.view == V_LIVE)             /* Q and R: Height, Spread */
+                lk_live_card((int)i, x, cx, on);
             continue;
+        }
         v = proj.par[p];
         if (is_pitch && (p == P_PLINK_OFF ? sh[1] != sh[0] : sh[g] != 0)) {
             v += p == P_PLINK_OFF ? sh[1] - sh[0] : sh[g];   /* Shift moving it: the pitch as heard, lit */

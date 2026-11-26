@@ -228,6 +228,10 @@ static void live_oct(int up);
 static void live_snap(int32_t e);
 static void live_run(void);
 static int live_led(int k);
+static int live_qr(void);                       /* ... Q or R on the chords: KNOB 1-2 Height, Spread */
+static int live_lh(void);
+static int live_knob(int i, int32_t e);
+static void live_sel(void);
 
 /* a message: a banner across the top of the picture for a moment (the knobs keep the bottom) */
 static void say_c(const char *a, const char *b, uint16_t col);
@@ -346,6 +350,11 @@ static void loop_note(int p, int v, uint32_t slide);  /* the motion loop notes k
 static int knob_own(int i)
 {
     knob_t k = VIEW_KNOB[ui.view][i];
+    if (ui.view == V_LIVE && live_qr()) {      /* Q and R: Height and Spread (live.c), Dark-Bright, Thickness */
+        if (i < 2)
+            return -1;
+        k.p = i == 2 ? P_DARK : P_THICK;
+    }
     if (k.g == NONE)
         return -1;
     if (k.g == G && dr_ext_spb > 0.0f)  /* on a MIDI clock (v0.3): the Swell's Rate its division, the delay's Time a note
@@ -1476,7 +1485,11 @@ static void button(int b)                              /* the other buttons, on 
     case B_REC:
         loop_button();
         break;
-    default: break;                                    /* SEL: a modifier (fine pitch) */
+    case B_SEL:                                        /* SEL: a modifier (fine pitch); a tap on the Live page */
+        if (ui.view == V_LIVE)                         /* the way chords are played: P, Q, R */
+            live_sel();
+        break;
+    default: break;
     }
 }
 
@@ -1930,7 +1943,7 @@ static void input(void)
                 ui.btn_used |= m;
                 if (back)
                     ui.btn_used |= 1u << B_SEL;
-                if (ui.view == V_LIVE)                 /* the Live page: the chords' octave */
+                if (ui.view == V_LIVE)                 /* the Live page: the chords' octave (Q: the left hand's) */
                     live_oct(i == B_OCTUP);
                 else
                     wave_step(i == B_OCTUP, back ? -1 : 1);
@@ -2083,6 +2096,8 @@ static void input(void)
         if ((e = plat_enc(EN_K1 + (int)i)) != 0) {
             const int kp = knob_param((int)i);
             knob_turn((int)i, e);
+            if (kp < 0 && ui.view == V_LIVE)
+                live_knob((int)i, e);
             if (ui.btn >> B_SEL & 1u)
                 ui.btn_used |= 1u << B_SEL;            /* SEL + a knob: SEL used (no map after it) */
             if (kp < 0 || !scene_room(kp))             /* the sound is no longer the scene's; a room setting (Fade, */
@@ -2403,6 +2418,10 @@ static void leds(void)
         b[B_OCTDN] = still ? LED_DIM : wave_lvl(dr_lfo[0]);
     if (proj.par[P_LFO_W2])
         b[B_OCTUP] = still ? LED_DIM : wave_lvl(dr_lfo[1]);
+    if (ui.view == V_LIVE && live_lh() >= 0) {        /* Q: OCT- the bass alone, OCT+ the root alone, lit */
+        b[B_OCTDN] = live_lh() == 1 ? 255 : 0;
+        b[B_OCTUP] = live_lh() == 2 ? 255 : 0;
+    }
     if (proj.par[P_PULSE]) {                           /* ARP: breathing with the swell, a beat a breath; stopped,
                                                         * still */
         float b1 = 1.0f + (float)proj.par[P_PULSE_SWING] * 0.01f, ph = dr_pulse_ph;

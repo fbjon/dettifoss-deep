@@ -64,7 +64,42 @@ static struct {
     uint8_t rest;                              /* the chord released */
     int8_t pbass;                              /* ... a bass held under it (a root key), -1 none */
     int16_t pnote;                             /* ... its note, MIDI, at no octave shift: it stays put */
-} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0};
+    uint8_t mode;                              /* the chords' keys: LV_P, LV_Q, LV_R (SEL) */
+    int8_t height;                             /* Q and R: the window's middle, MIDI (KNOB 1) */
+    int8_t spread;                             /* ... how far apart its three tones sit, semitones (KNOB 2) */
+    uint16_t shape;                            /* Q: the right hand's shape, its tones over C (bit 0 C .. 11 B); 0
+                                                * none yet (a major triad) */
+    uint32_t rkeys;                            /* R: the keys of the chord (latched) */
+    uint32_t rtap;                             /* ... those pressed again while others were held: a tap takes them out */
+    uint8_t lh;                                /* Q: the left hand plays 0 the root and bass, 1 the bass (the root
+                                                * held), 2 the root (the bass held) */
+    uint8_t croot;                             /* Q and R: the chord's root, a pitch class (C 0), for its name */
+    char cname[16];                            /* ... its name */
+} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, ""};
+
+/* THE THREE WAYS TO PLAY CHORDS (SEL on the Live page goes round them):
+ *   P  roots and modifiers, as above
+ *   Q  root and shape: the left hand (F3 .. E4) the root, as P's; the right hand (F4 .. F#5) a chord's shape, its
+ *      keys read as over C (C E G a major chord, C Eb G Bb a minor seventh, whatever the root). Keys held together
+ *      make one shape, latched; the next touch after letting go starts a new one. The left hand plays the root and
+ *      the bass; OCT- lit, the bass alone (the chord's root held); OCT+ lit, the root alone (the bass held): a
+ *      three-way switch, the lit one tapped again back to both. (No octave: Height places the chord)
+ *   R  the whole keyboard: the keys held together are the chord, latched as Q's shape; the lowest the bass (an octave
+ *      down, no higher than E3), the rest its tones. One key alone: its fifth and octave over it. While a key is held,
+ *      a tap of a key in the chord takes it out (one held on while another is let go stays: the hand moved on)
+ * In Q and R the tones aren't played where the keys are: up to three of them (the third and seventh kept first, the
+ * root and fifth dropped first) are placed by a window: KNOB 1 HEIGHT its middle, KNOB 2 SPREAD how far apart the
+ * three sit (0 close, around Height; 12 an octave from the lowest to the highest; 36 three octaves), each the nearest
+ * of its pitch class to its place, so turning Height goes through the inversions. KNOB 3 Dark-Bright, KNOB 4
+ * Thickness. A knob's change glides (Snap's wash, else legato), never a pad's attack */
+enum { LV_P, LV_Q, LV_R, LV_NMODE };
+#define LV_ZQ 0x03FFF000u                      /* Q's right hand: F4 .. F#5, keys 12 .. 25 */
+#define LV_ALL 0x07FFFFFFu                     /* every key, F3 .. G5 */
+#define LV_H_LO 40
+#define LV_H_HI 84
+#define LV_S_HI 36
+static int live_qr(void) { return lv.mode != LV_P && !lv.prog; }
+static int live_q(void) { return lv.mode == LV_Q && !lv.prog; }
 
 static char *lv_end(char *t)
 {
@@ -98,8 +133,147 @@ static void lv_name(int root, uint8_t m, int bass, char *t)   /* "Am7", "Csus4/G
     }
 }
 
+/* Q and R: the chord's name from its pitch classes (bit 0 C), and its notes by the window */
+static const char *const LV_IV[12] = {"1", "b2", "2", "b3", "3", "4", "b5", "5", "b6", "6", "b7", "7"};
+static const struct { uint16_t m; char s[6]; } LV_KIND[] = {
+    {0x091, ""}, {0x089, "m"}, {0x085, "sus2"}, {0x0A1, "sus4"}, {0x491, "7"}, {0x891, "maj7"}, {0x489, "m7"},
+    {0x4A1, "7sus4"}, {0x095, "add9"}, {0x08D, "madd9"}, {0x291, "6"}, {0x289, "m6"}, {0x495, "9"}, {0x895, "maj9"},
+    {0x48D, "m9"}, {0x889, "mmaj7"}, {0x049, "dim"}, {0x111, "aug"}, {0x249, "dim7"}, {0x449, "m7b5"}, {0x081, "5"},
+    {0x001, ""}};
+static const uint8_t LV_KEEP[12] = {4, 3, 10, 11, 2, 9, 5, 6, 8, 1, 7, 0};   /* the tones kept first, over the root */
+static uint16_t lv_rot(uint16_t m, int r)      /* pitch classes as over r (r's bit 0) */
+{
+    r = (r % 12 + 12) % 12;
+    return (uint16_t)((m >> r | m << (12 - r)) & 0xFFFu);
+}
+static int lv_kind(uint16_t m)                 /* its kind over its root, the fifth left out allowed; -1 none */
+{
+    int i;
+    for (i = 0; i < (int)(sizeof LV_KIND / sizeof LV_KIND[0]); i++)
+        if (LV_KIND[i].m == m || (!(m & 0x080u) && LV_KIND[i].m == (m | 0x080u) && m != 0x001u))
+            return i;
+    return -1;
+}
+static void lv_qr_name(int r, int b, uint16_t pcs)   /* over root r, bass b (pitch classes); "C:2 b6" if no kind */
+{
+    int k = lv_kind(lv_rot(pcs, r) | 1u), i;
+    if (k < 0 && r == b)                       /* the bass as the root names nothing: another root, over it */
+        for (i = 0; i < 12 && k < 0; i++)
+            if (i != b && pcs >> i & 1u && (k = lv_kind(lv_rot(pcs, i))) >= 0)
+                r = i;
+    lv.croot = (uint8_t)r;
+    scopy(lv.cname, LV_PC[r]);
+    if (k >= 0)
+        scat(lv.cname, LV_KIND[k].s);
+    else {
+        const uint16_t m = lv_rot(pcs, r);
+        scat(lv.cname, ":");
+        for (i = 1; i < 12 && text_w(&LK_F_TAG, lv.cname) < 150; i++)
+            if (m >> i & 1u) {
+                if (lv_end(lv.cname)[-1] != ':')
+                    scat(lv.cname, " ");
+                scat(lv.cname, LV_IV[i]);
+            }
+    }
+    if (b != r) {
+        scat(lv.cname, "/");
+        scat(lv.cname, LV_PC[b]);
+    }
+}
+static int lv_near(int pc, int t)              /* pitch class pc's note nearest note t */
+{
+    const int n = t - ((t - pc) % 12 + 12) % 12;
+    return t - n > 6 ? n + 12 : n;
+}
+static void lv_window(uint16_t pcs, int r, int bass, int16_t *u)   /* up to three of pcs placed by the window, rising */
+{
+    static const uint8_t PERM[6][3] = {{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}};
+    const uint16_t m = lv_rot(pcs, r);
+    const int h = lv.height + 12 * lv.oct;
+    int tone[3], n = 0, i, j, p, best = 1 << 30, at[3];
+    for (i = 0; i < 12 && n < 3; i++)
+        if (m >> LV_KEEP[i] & 1u)
+            tone[n++] = (r + LV_KEEP[i]) % 12;
+    if (!n)
+        tone[n++] = r;
+    for (i = n; i < 3; i++)                    /* fewer than three: doubled */
+        tone[i] = tone[i - n];
+    for (i = 0; i < 3; i++)                    /* the three places: Spread apart, around Height */
+        at[i] = h + (lv.spread * (i - 1)) / 2;
+    for (p = 0; p < 6; p++) {                  /* the tones to the places, as near as they go */
+        int cost = 0, v[3];
+        for (i = 0; i < 3; i++) {
+            v[i] = lv_near(tone[PERM[p][i]], at[i]);
+            cost += v[i] > at[i] ? v[i] - at[i] : at[i] - v[i];
+        }
+        if (cost < best) {
+            best = cost;
+            for (i = 0; i < 3; i++)
+                u[i] = (int16_t)v[i];
+        }
+    }
+    for (i = 0; i < 3; i++)                    /* over the bass */
+        while (u[i] <= bass)
+            u[i] += 12;
+    for (i = 0; i < 2; i++)                    /* rising */
+        for (j = 0; j < 2 - i; j++)
+            if (u[j + 1] < u[j]) {
+                const int16_t x = u[j];
+                u[j] = u[j + 1];
+                u[j + 1] = x;
+            }
+    for (i = 1; i < 3; i++)                    /* a doubled note an octave up */
+        while (u[i] <= u[i - 1])
+            u[i] += 12;
+}
+
+static int lv_low(uint32_t m)                  /* the lowest key of m */
+{
+    int k = 0;
+    while (k < 31 && !(m >> k & 1u))
+        k++;
+    return k;
+}
+static void lv_notes_qr(void)
+{
+    int b, r, k;
+    uint16_t pcs = 0;
+    int16_t u[3];
+    if (lv.mode == LV_Q) {
+        const int lo = LV_LOW + lv.root + 12 * lv.oct;
+        r = (5 + lv.root) % 12;
+        b = lv.bass >= 0 ? LV_LOW + lv.bass + 12 * lv.oct : lo;
+        if (b > lo)
+            b -= 12;
+        pcs = lv_rot(lv.shape ? lv.shape : 0x091u, 12 - r);
+        lv_window(pcs, r, b, u);
+        lv_qr_name(r, b % 12, (uint16_t)(pcs | 1u << r));
+    } else {
+        const int low = lv_low(lv.rkeys);
+        b = LV_LOW + low + 12 * lv.oct;
+        while (b > 52 + 12 * lv.oct)
+            b -= 12;
+        for (k = low + 1; k < 27; k++)
+            if (lv.rkeys >> k & 1u)
+                pcs |= (uint16_t)(1u << (5 + k) % 12);
+        if (!pcs)                              /* one key: its fifth and octave */
+            pcs = (uint16_t)(1u << b % 12 | 1u << (b + 7) % 12);
+        lv_window(pcs, b % 12, b, u);
+        lv_qr_name(b % 12, b % 12, (uint16_t)(pcs | 1u << b % 12));
+    }
+    lv.note[0] = (int16_t)b;
+    for (k = 0; k < 3; k++)
+        lv.note[k + 1] = u[k];
+    dr_chord(0, lv.note[0] * 100, (lv.note[1] - lv.note[0]) * 100, 1);
+    dr_chord(1, lv.note[2] * 100, (lv.note[3] - lv.note[2]) * 100, 1);
+}
+
 static void lv_notes(void)                     /* the chord's notes to the drones (taken up by dr_chord_go / a rest) */
 {
+    if (live_qr()) {
+        lv_notes_qr();
+        return;
+    }
     const int lo = LV_LOW + lv.root + 12 * lv.oct, up = 12 * lv.reg;
     int b = lv.bass >= 0 ? LV_LOW + lv.bass + 12 * lv.oct : lo;
     if (b > lo)                                /* a bass set apart goes under the chord */
@@ -217,6 +391,56 @@ static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
         pg_keys(keys, ch);
         return;
     }
+    if (lv.mode == LV_R) {                     /* R: the keys held together the chord */
+        const uint32_t up = ch & ~keys & LV_ALL;
+        if (up) {                              /* let go: a tap of a key already in the chord takes it out, unless
+                                                * another key was let go while it was held (the hand moved on) */
+            const uint32_t out = up & lv.rtap & lv.rkeys;
+            lv.rtap &= ~up & ~(keys & LV_ALL);
+            if (out && lv.root >= 0) {
+                lv.rkeys &= ~out;
+                if (lv.rkeys) {
+                    lv.root = (int8_t)(lv_low(lv.rkeys) % 12);
+                    lv_send();
+                } else {
+                    lv.root = -1;
+                    dr_chord_go(0, lv.snap);
+                }
+            }
+        }
+        if (!(dn & LV_ALL))
+            return;
+        if (ui.btn >> B_SEL & 1u) {            /* SEL + a key: the chord let go */
+            ui.btn_used |= 1u << B_SEL;
+            if (lv.root >= 0) {
+                lv.root = -1;
+                dr_chord_go(0, lv.snap);
+            }
+            return;
+        }
+        if ((keys ^ ch) & LV_ALL & ~up) {      /* other keys held: added, or one in the chord marked (a tap takes
+                                                * it out) */
+            lv.rtap |= dn & LV_ALL & lv.rkeys;
+            if (!(dn & LV_ALL & ~lv.rkeys))
+                return;
+            lv.rkeys |= dn & LV_ALL;
+        } else {                               /* the first after letting go of all: a new chord */
+            lv.rkeys = dn & LV_ALL;
+            lv.rtap = 0;
+        }
+        lv.root = (int8_t)(lv_low(lv.rkeys) % 12);
+        lv_send();
+        return;
+    }
+    if (lv.mode == LV_Q && (dn & LV_ZQ)) {     /* Q: the right hand's shape */
+        uint16_t m = 0;
+        for (k = 12; k < 26; k++)
+            if (dn >> k & 1u)
+                m |= (uint16_t)(1u << (5 + k) % 12);
+        lv.shape = ((keys ^ ch) & LV_ZQ) ? (uint16_t)(lv.shape | m) : m;
+        if (lv.root >= 0)
+            lv_send();
+    }
     for (k = 0; k < LV_NROOT; k++) {
         if (!(dn >> k & 1u))
             continue;
@@ -228,7 +452,21 @@ static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
             }
             continue;
         }
-        if (lv.bass_arm) {                     /* Bass armed: this key the bass */
+        if (lv.mode == LV_Q) {                 /* Q: the root and bass, the bass alone, or the root alone */
+            const int to = lv.lh;
+            if (to == 1) {                     /* the bass, the chord's root held (none yet: both) */
+                lv.bass = (int8_t)k;
+                if (lv.root < 0)
+                    lv.root = (int8_t)k;
+            } else if (to == 2) {              /* the root, the bass held */
+                if (lv.bass < 0)
+                    lv.bass = lv.root >= 0 ? lv.root : (int8_t)k;
+                lv.root = (int8_t)k;
+            } else {
+                lv.root = (int8_t)k;
+                lv.bass = -1;
+            }
+        } else if (lv.bass_arm) {              /* Bass armed: this key the bass */
             lv.bass = (int8_t)k;
             lv.bass_arm = 0;
             if (lv.root < 0) {
@@ -241,7 +479,7 @@ static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
         }
         lv_send();
     }
-    for (k = 0; k < LM_N; k++) {
+    for (k = 0; k < LM_N && lv.mode == LV_P; k++) {
         if (!(dn >> LV_MOD_K[k] & 1u))
             continue;
         lv.mods ^= (uint8_t)(1u << k);
@@ -252,7 +490,7 @@ static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
                 lv.mods &= (uint8_t)~(1u << (k == LM_7 ? LM_MAJ7 : LM_7));
         }
     }
-    if (dn >> LV_BASS_K & 1u) {
+    if ((dn >> LV_BASS_K & 1u) && lv.mode != LV_Q) {
         if (lv.bass >= 0) {                    /* the lit Bass: let go, the bass the root again */
             lv.bass = -1;
             lv.bass_arm = 0;
@@ -263,8 +501,14 @@ static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
     }
 }
 
-static void live_oct(int up)                   /* OCT- / OCT+ on the page: the register */
+static int live_lh(void) { return live_q() ? lv.lh : -1; }   /* Q: the left hand's, for OCT's lights */
+static void live_oct(int up)                   /* OCT- / OCT+ on the page: the register; Q: the left hand's */
 {
+    if (live_q()) {                            /* the bass alone (OCT-), the root alone (OCT+), the lit one: both */
+        lv.lh = (uint8_t)(lv.lh == (up ? 2 : 1) ? 0 : up ? 2 : 1);
+        say("LEFT HAND", lv.lh == 1 ? "THE BASS ALONE" : lv.lh == 2 ? "THE ROOT ALONE" : "ROOT AND BASS");
+        return;
+    }
     const int o = lv.oct + (up ? 1 : -1);
     if (o < -1 || o > 1)
         return;
@@ -283,10 +527,85 @@ static void live_snap(int32_t e)               /* ALGORITHM on the page: Snap */
     ui.act_t = plat_ms();
 }
 
+static void live_sel(void)                     /* SEL (a tap) on the chords: P, Q, R in turn; the chord kept */
+{
+    static const char *const SAY[LV_NMODE] = {"ROOTS + MODIFIERS", "ROOT + SHAPE", "THE WHOLE KEYBOARD"};
+    char t[8];
+    if (lv.prog)
+        return;
+    if (lv.mode == LV_R && lv.root >= 0)       /* the bass's key, as a root */
+        lv.root = (int8_t)(lv_low(lv.rkeys) % 12);
+    lv.mode = (uint8_t)((lv.mode + 1) % LV_NMODE);
+    lv.bass_arm = 0;
+    if (lv.mode == LV_R) {
+        lv.bass = -1;
+        lv.rkeys = lv.root >= 0 ? 1u << lv.root : 0u;
+    }
+    if (lv.root >= 0 && !lv.rest)
+        lv_send();
+    scopy(t, "LIVE ");
+    t[5] = (char)('P' + lv.mode);
+    t[6] = 0;
+    say(t, SAY[lv.mode]);
+}
+
+static int live_knob(int i, int32_t e)         /* Q and R: KNOB 1 Height, KNOB 2 Spread; 0 not theirs */
+{
+    int v;
+    if (!live_qr() || i > 1)
+        return 0;
+    if (i == 0) {
+        v = lv.height + (int)e;
+        lv.height = (int8_t)(v < LV_H_LO ? LV_H_LO : v > LV_H_HI ? LV_H_HI : v);
+    } else {
+        v = lv.spread + (int)e;
+        lv.spread = (int8_t)(v < 0 ? 0 : v > LV_S_HI ? LV_S_HI : v);
+    }
+    if (lv.root >= 0 && !lv.rest) {            /* a glide, never a pad's attack */
+        lv_notes();
+        dr_chord_go(1, lv.snap < DR_SNAP_LEGATO ? lv.snap : DR_SNAP_LEGATO);
+    }
+    return 1;
+}
+static uint32_t live_sig(void)                 /* what the knobs' cards show of the page */
+{
+    return (uint32_t)(uint8_t)lv.height | (uint32_t)(uint8_t)lv.spread << 8 | (uint32_t)lv.mode << 16 |
+           (uint32_t)lv.prog << 18;
+}
+static int live_mode(void) { return lv.prog ? -1 : lv.mode; }
+
+/* Q and R: the cards of KNOB 1 and 2, Height (a note) and Spread (semitones), as a setting's card */
+static void lk_live_card(int i, int32_t x, int32_t cx, int on)
+{
+    const char *name = i ? "Spread" : "Height";
+    const uint16_t acc = LK_DRONE[LK_G];
+    const felucca_font_t *fn = lk_name_font(name), *fb = on ? &FONT_N1 : &FONT_N2;
+    char t[8];
+    if (!live_qr() || i > 1)
+        return;
+    if (on) {
+        cv_round(x + 1, 4, 54, 81, 5, acc);
+        cv_round(x + 2, 5, 52, 79, 4, LK_BG);
+    }
+    text_c(cx, 7 + (int32_t)(FONT_T20.h - fn->h) / 2, fn, name, on ? acc : LK_LABEL);
+    if (i) {
+        itoa_u((uint32_t)lv.spread, t);
+    } else {
+        scopy(t, LV_PC[lv.height % 12]);
+        itoa_u((uint32_t)(lv.height / 12 - 1), lv_end(t));
+    }
+    text_c(cx, 32, fb, t, LK_WHITE);
+    if (i)
+        text_c(cx, 32 + (int32_t)fb->h, &FONT_U2, "semitones", LK_LABEL);
+}
+
 static void live_run(void)                     /* each frame: Dark-Bright's octave for the upper tones */
 {
     const int d = proj.par[P_DARK];
-    const int r = d >= 50 ? 1 : d <= -50 ? -1 : (lv.reg > 0 && d > 40) || (lv.reg < 0 && d < -40) ? lv.reg : 0;
+    int r;
+    if (live_qr())                             /* (Q and R: Height places the tones) */
+        return;
+    r = d >= 50 ? 1 : d <= -50 ? -1 : (lv.reg > 0 && d > 40) || (lv.reg < 0 && d < -40) ? lv.reg : 0;
     if (r != lv.reg) {
         lv.reg = (int8_t)r;
         if (lv.root >= 0 && !lv.rest)
@@ -300,11 +619,17 @@ static int live_led(int k)                     /* a key's light on the page, 0..
     if (lv.prog)                               /* the progression: next and previous, taking turns at full */
         return k == LV_BASS_K ? (lv.pbass >= 0 ? 255 : 0)
                               : k > PG_PREV ? 0 : (int)(plat_ms() / 500u & 1u) == k ? 255 : 96;
+    if (lv.mode == LV_R)                       /* R: the chord's keys */
+        return lv.root >= 0 && (lv.rkeys >> k & 1u) ? 255 : 0;
+    if (lv.mode == LV_Q && (LV_ZQ >> k & 1u))  /* Q: the shape's keys (none yet: a major triad's, dim) */
+        return lv.shape ? (lv.shape >> (5 + k) % 12 & 1u ? 255 : 0) : (0x091u >> (5 + k) % 12 & 1u ? LED_DIM : 0);
     if (k < LV_NROOT)
         return k == lv.root ? 255 : k == lv.bass ? LED_DIM : 0;
     for (m = 0; m < LM_N; m++)
         if (k == LV_MOD_K[m])
             return lv.mods >> m & 1u ? 255 : 0;
+    if (k == LV_BASS_K && lv.mode == LV_Q)
+        return 0;
     if (k == LV_BASS_K)
         return lv.bass >= 0 ? 255 : lv.bass_arm ? (blink(400u) ? 255 : 0) : 0;
     return 0;
@@ -317,11 +642,14 @@ static void lk_pic_live(void)
     char t[24];
     int i;
     const float th = (float)proj.par[P_THICK] * 0.01f;
-    if (lv.root >= 0)
+    if (lv.root >= 0 && live_qr())
+        scopy(t, lv.cname);
+    else if (lv.root >= 0)
         lv_name(lv.root, lv.smods, lv.bass, t);
     else
         scopy(t, "no chord");
-    text_c(120, 14, lv.root >= 0 ? &FONT_L : &LK_F_SOUND, t, lv.root >= 0 && !lv.rest ? LK_WHITE : LK_LABEL);
+    text_c(120, 14, lv.root >= 0 && text_w(&FONT_L, t) <= 220 ? &FONT_L : &LK_F_SOUND, t,
+           lv.root >= 0 && !lv.rest ? LK_WHITE : LK_LABEL);
     if (lv.root >= 0) {
         static const char *const ROLE[4] = {"bass", "5th", "3rd", "top"};
         for (i = 0; i < 4; i++) {
@@ -334,7 +662,7 @@ static void lk_pic_live(void)
             scopy(nn, LV_PC[n % 12]);
             itoa_u((uint32_t)(n / 12 - 1), lv_end(nn));
             text_c(cx, 56, &FONT_T22, nn, lk_mix(0x5A566Bu, 0xFFFFFFu, left));
-            text_c(cx, 80, &LK_F_SMALL, ROLE[i], LK_LABEL);
+            text_c(cx, 80, &LK_F_SMALL, i && live_qr() ? LV_IV[(n - lv.croot + 120) % 12] : ROLE[i], LK_LABEL);
         }
     }
     {   /* the line under: what the next chord takes, the bass, the octave, Snap */
@@ -347,7 +675,9 @@ static void lk_pic_live(void)
                 x = cv_text(x, y, &LK_F_TAG, c, i == lv.step ? LK_GOLD : LK_LABEL);
                 x = cv_text(x, y, &LK_F_TAG, " ", LK_LABEL);
             }
-        } else if (lv.bass_arm)
+        } else if (live_qr() && !lv.bass_arm)
+            x = cv_text(x, y, &LK_F_TAG, lv.mode == LV_R ? "R whole keyboard" : lv.lh == 1 ? "Q left: bass" : lv.lh == 2 ? "Q left: root" : "Q root + shape", LK_LABEL);
+        else if (lv.bass_arm)
             x = cv_text(x, y, &LK_F_TAG, "bass: tap a root", LK_GOLD);
         else if (lv.mods) {
             x = cv_text(x, y, &LK_F_TAG, "next ", LK_LABEL);
