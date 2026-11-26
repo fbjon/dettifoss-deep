@@ -17,21 +17,20 @@ SRC = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SRC / "tools"))
 from make_manual import JA_NOTE, menu_html  # noqa: E402
 
-SPEC_EN = """Two drones that breathe and drift on their own. Play them with knobs, gestures and scenes, from a calm, glowing hum
-    to harsh, beating, self-oscillating sound."""
-SPEC_JA = "ひとりでに呼吸し、漂う2つのドローン。ノブ、ジェスチャー、シーンで弾き、穏やかに光るハムから、荒々しくうなり、自己発振する音まで。"
-DESC_EN = ("Drone synthesizer firmware for the M-VAVE FM-1: two drones that breathe and drift on their own, played with "
-           "knobs, gestures and scenes in microtonal tunings, from a calm, glowing hum to harsh, beating, self-oscillating sound.")
-DESC_JA = ("M-VAVE FM-1用のドローン・シンセ・ファームウェア。ひとりでに呼吸し、漂う2つのドローンを、マイクロトーナルなチューニングで、"
-           "ノブ、ジェスチャー、シーンを使って弾きます。穏やかに光るハムから、荒々しくうなり、自己発振する音まで。")
+SPEC_EN = """A drone that plays chords: by root and modifiers, by shape, or from the whole keyboard (SEL switches), with
+    a progression to step through (HOME). Built on Niagara Drift's engine."""
+SPEC_JA = ("コードを弾くドローン：ルートとモディファイア、シェイプ、または鍵盤全体で（SELで切り替え）。順に進められるコード進行も"
+           "（HOME）。Niagara Driftのエンジンの上に作られています。")
+DESC_EN = 'Songwriting firmware for the M-VAVE FM-1: a drone that plays chords, by root and modifiers, by shape, or from the whole keyboard, with a progression to step through.'
+DESC_JA = ("M-VAVE FM-1用のソングライティング・ファームウェア：ルートとモディファイア、シェイプ、または鍵盤全体でコードを弾く"
+           "ドローンと、順に進められるコード進行。")
 
 # (English, Japanese, how many times the English is in the page)
 PAIRS = [
     ('<html lang="en">', '<html lang="ja">', 1),
-    ("<title>Niagara Drift</title>", "<title>Niagara Drift（日本語）</title>", 1),
+    ("<title>Dettifoss Deep</title>", "<title>Dettifoss Deep（日本語）</title>", 1),
     (DESC_EN, DESC_JA, 2),
-    ('content="https://evanyerburgh.github.io/niagara-drift/">', 'content="https://evanyerburgh.github.io/niagara-drift/ja/">', 1),
-    ('<p class="tag">Drone synthesizer firmware for the M-VAVE FM-1</p>', '<p class="tag">M-VAVE FM-1用のドローン・シンセ・ファームウェア</p>', 2),
+    ('<p class="tag">Songwriting firmware for the M-VAVE FM-1</p>', '<p class="tag">M-VAVE FM-1用のソングライティング・ファームウェア</p>', 2),
     (SPEC_EN, SPEC_JA, 2),
     ('<span class="here">Play it here ↓</span>', '<span class="here">ここで弾く ↓</span>', 2),
     ('aria-label="The FM-1: knobs, buttons, screen and keys"', 'aria-label="FM-1：ノブ、ボタン、画面、鍵盤"', 1),
@@ -45,18 +44,18 @@ PAIRS = [
      'aria-label="初期化" title="初期化：サウンドとシーンを消して、初期設定からやり直します">リセット</button>', 1),
     ('aria-label="The manual"', 'aria-label="マニュアル"', 2),
     ("<h2 data-recolor>Start here</h2>", "<h2 data-recolor>はじめに</h2>", 1),
-    ('The drones wait for <kbd>PLAY</kbd>, and the white keys hold sounds, not notes.',
-     'ドローンは<kbd>PLAY</kbd>を押すまで待っています。白鍵が呼び出すのは音程ではなく、サウンドです。', 1),
-    ("<li>Tap <kbd>PLAY</kbd> and the drones fade in</li>", "<li><kbd>PLAY</kbd>をタップすると、ドローンがフェード・インします</li>", 1),
-    ("<li>Tap white keys 1–8. There's a preset on each</li>", "<li>白鍵1–8をタップします。それぞれにプリセットが入っています</li>", 1),
-    ("<li>Hold a gesture key (the top eight white keys), then let go</li>", "<li>ジェスチャー・キー（上の8つの白鍵）を長押しして、離します</li>", 1),
-    ("<li>Turn KNOB 1–4 to change each drone's level and cutoff</li>", "<li>KNOB 1–4を回して、各ドローンのレベルとカットオフを変えます</li>", 1),
-    ("<li>To keep your sound, hold <kbd>SEL</kbd> and tap <kbd>G4</kbd> (bank 1), then hold <kbd>SAVE</kbd> and tap a white key to save it there</li>",
-     "<li>サウンドを残すには、<kbd>SEL</kbd>を押しながら<kbd>G4</kbd>（バンク1）をタップし、次に<kbd>SAVE</kbd>を押しながら白鍵をタップして、そこに保存します</li>", 1),
-    ("""<b>Or build it up yourself:</b> start from one drone with everything off, and add a control
-        at a time. <a href="manual/recipes/scratch/">Build a sound from scratch →</a>""",
-     """<b>自分で組み立てることもできます：</b>すべてオフのドローン1つから始めて、コントロールを1つずつ加えます。
-        <a href="manual/recipes/scratch/">ゼロからサウンドを作る →</a>""", 1),
+    ('The FM-1 starts on the Live page: the keys play chords over the drone, which waits for <kbd>PLAY</kbd>.',
+     'FM-1はLiveページで始まります。鍵盤がドローンの上でコードを弾き、ドローンは<kbd>PLAY</kbd>を待っています。', 1),
+    ('<li>Tap <kbd>PLAY</kbd> and the drone fades in</li>',
+     '<li><kbd>PLAY</kbd>をタップすると、ドローンがフェード・インします</li>', 1),
+    ('<li>Tap a root, F3 to E4; the black keys above add minor, sus, 7 and the rest to the next chord</li>',
+     '<li>ルート（F3–E4）をタップします。その上の黒鍵で、次のコードにマイナー、sus、7などを加えます</li>', 1),
+    ('<li>Tap <kbd>SEL</kbd> to switch the way chords are played: P roots and modifiers, Q a root and a shape, R the whole keyboard. The labels on the panel follow</li>',
+     '<li><kbd>SEL</kbd>をタップして、コードの弾き方を切り替えます：P ルートとモディファイア、Q ルートとシェイプ、R 鍵盤全体。パネルの表示も切り替わります</li>', 1),
+    ("<li>In Q and R, KNOB 1 Height and KNOB 2 Spread place the chord's notes; ALGORITHM is Snap, how a change lands</li>",
+     '<li>QとRでは、KNOB 1 HeightとKNOB 2 Spreadでコードの音の位置を決めます。ALGORITHMはSnap、コードの変わり方です</li>', 1),
+    ("<li>Tap <kbd>HOME</kbd> for the progression: F3 the next chord, F#3 the one before. <kbd>SEL</kbd> + <kbd>HOME</kbd>: the sound's pages (Niagara Drift's)</li>",
+     '<li><kbd>HOME</kbd>をタップするとコード進行：F3で次のコード、F#3で前のコード。<kbd>SEL</kbd> + <kbd>HOME</kbd>：サウンドのページ（Niagara Driftのもの）</li>', 1),
     ("<small>I want a sound</small><b>Recipes</b><span>Ticks, metallic bells, warbling echoes, gestures, scenes, transitions</span>",
      "<small>音を作りたい</small><b>レシピ</b><span>クリック、金属的なベル、揺れるエコー、ジェスチャー、シーン、トランジション</span>", 1),
     ("<small>What does this do</small><b>Reference</b><span>Every page, knob and key, in the order of the buttons</span>",
@@ -85,14 +84,14 @@ PAIRS = [
     ("<dt>SAVE · SEL (hold)</dt>", "<dt>SAVE · SEL（押し続ける）</dt>", 1),
     ("<dt>Any knob</dt><dd><kbd>Tab</kbd> to it, then <kbd>↑</kbd><kbd>↓</kbd></dd>",
      "<dt>どのノブでも</dt><dd><kbd>Tab</kbd>で選んで、<kbd>↑</kbd><kbd>↓</kbd></dd>", 1),
-    ("""<p><b>Niagara Drift</b> is free, open-source firmware (GPL‑3.0) for the M-VAVE FM‑1, made by Evan Yerburgh; not made or endorsed by M-VAVE.
-    <a href="manual/about/">About</a> · <a href="https://github.com/evanyerburgh/niagara-drift" aria-label="Source on GitHub">Source on GitHub</a></p>""",
-     """<p><b>Niagara Drift</b>は、Evan YerburghによるM-VAVE FM‑1用の無料・オープンソースのファームウェア（GPL‑3.0）です。M-VAVEによる製品や公認のものではありません。
-    {NOTE} <a href="manual/about/">概要</a> · <a href="https://github.com/evanyerburgh/niagara-drift">GitHubのソース</a></p>""", 1),
+    ('<p><b>Dettifoss Deep</b> is free, open-source firmware (GPL‑3.0) for the M-VAVE FM‑1, a fork of Evan Yerburgh\'s\n    <a href="https://github.com/evanyerburgh/niagara-drift">Niagara Drift</a>; not made or endorsed by M-VAVE. The manual is still\n    Niagara Drift\'s. <a href="https://github.com/fbjon/dettifoss-deep" aria-label="Source on GitHub">Source on GitHub</a></p>',
+     """<p><b>Dettifoss Deep</b>は、M-VAVE FM‑1用の無料・オープンソースのファームウェア（GPL‑3.0）で、Evan Yerburghの
+    <a href="https://github.com/evanyerburgh/niagara-drift">Niagara Drift</a>のフォークです。M-VAVEによる製品や公認のものではありません。
+    マニュアルはまだNiagara Driftのものです。{NOTE} <a href="https://github.com/fbjon/dettifoss-deep">GitHubのソース</a></p>""", 1),
     # the script's words
     ('go.textContent = "Starting...";', 'go.textContent = "起動中…";', 1),
-    ("cpu.textContent = `Niagara Drift uses ${m.load}% of this computer's time`;",
-     "cpu.textContent = `Niagara Driftはこのパソコンの処理時間の${m.load}%を使っています`;", 1),
+    ("cpu.textContent = `Dettifoss Deep uses ${m.load}% of this computer's time`;",
+     "cpu.textContent = `Dettifoss Deepはこのパソコンの処理時間の${m.load}%を使っています`;", 1),
     ('status.textContent = ac.sampleRate === 44100 ? "On" : `On (the browser runs audio at ${ac.sampleRate} Hz)`;',
      'status.textContent = ac.sampleRate === 44100 ? "オン" : `オン（ブラウザーのオーディオは${ac.sampleRate} Hzで動いています）`;', 1),
     ('go.textContent = "Switch on";', 'go.textContent = "電源を入れる";', 1),

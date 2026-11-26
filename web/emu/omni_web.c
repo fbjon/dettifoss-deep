@@ -74,6 +74,11 @@ __attribute__((used, visibility("default"))) void web_enc(int role, int32_t n)
 __attribute__((used, visibility("default"))) void web_master(uint32_t v) { master = v > 4096u ? 4096u : v; }
 __attribute__((used, visibility("default"))) uint32_t web_lit_buttons(void) { return lit_btn; }
 __attribute__((used, visibility("default"))) uint32_t web_lit_keys(void) { return lit_keys; }
+__attribute__((used, visibility("default"))) int web_live(void)   /* the Live page's way, 0-2 P Q R; 3 the progression;
+                                                                 * 4 another page (the panel's labels follow) */
+{
+    return ui.view != V_LIVE ? 4 : live_prog() ? 3 : live_mode();
+}
 __attribute__((used, visibility("default"))) uint32_t web_keys_lfo(void) { return sw_layer() == SW_LFO; }   /* the black keys' LFO layer */
 __attribute__((used, visibility("default"))) uint8_t *web_btn_levels(void) { return lvl_btn; }
 __attribute__((used, visibility("default"))) uint8_t *web_key_levels(void) { return lvl_keys; }   /* 27, from F3 */
