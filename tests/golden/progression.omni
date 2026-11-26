@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # the same-samples check (tools/same_samples.py): the progression page (HOME on the Live page) at Snap 100, stepped with
-# F3 both ways: REST (a tap steps, held the chord rests) and HOLD (held the chord plays, let go it rests).
-# Not a test of its own.
+# F3 (key 0; F#3 is 1) both ways: REST (a tap steps, held the chord rests) and HOLD (held the chord plays, let go it
+# rests). Not a test of its own.
 notips
 tap PLAY
 wait 1500
@@ -10,40 +10,40 @@ tap HOME
 turn ALGO 10
 wait 2500
 wav progression-rest.wav
-tapkey F3
+tapkey 0
 wait 2500
-key F3 down
+key 0 down
 wait 1200
 shot progression-rest.png
-key F3 up
+key 0 up
 wait 2500
-tapkey F3
+tapkey 0
 wait 1500
-key F3 down
+key 0 down
 wait 1500
-key F3 up
+key 0 up
 wait 2000
 shot progression-steps.png
-tapkey F#3
+tapkey 1
 wait 2500
 wavstop
 press SEL
-key F3 down
-key F3 up
+key 0 down
+key 0 up
 release SEL
 wait 500
 wav progression-hold.wav
-key F3 down
+key 0 down
 wait 1500
-key F3 up
+key 0 up
 wait 1200
-key F3 down
+key 0 down
 wait 1500
-key F3 up
+key 0 up
 wait 1200
-key F#3 down
+key 1 down
 wait 1500
-key F#3 up
+key 1 up
 wait 1500
 shot progression-hold.png
 wavstop
