@@ -1,0 +1,453 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the live macros over a held chord (C: C3 G3 E4 B4), each swept
+# in detents of 10 from 0 down to -100, up to 100 and back, on a still sound (no Swell, Drift, filter LFOs or detune,
+# so what moves is the macro); then Space's tail, the drones stopped at -100, 0, 100.
+# Not a test of its own.
+notips
+set 55 0
+set 52 0
+set 17 0
+set 38 0
+set 4 0
+set 25 0
+tap PLAY
+wait 2000
+chord 0 4800 700
+chord 1 6400 700
+chordgo 1 100
+wait 2000
+wav live-dark.wav
+wait 3000
+set 86 -10
+wait 400
+set 86 -20
+wait 400
+set 86 -30
+wait 400
+set 86 -40
+wait 400
+set 86 -50
+wait 400
+set 86 -60
+wait 400
+set 86 -70
+wait 400
+set 86 -80
+wait 400
+set 86 -90
+wait 400
+set 86 -100
+wait 400
+set 86 -100
+wait 400
+set 86 -100
+wait 400
+set 86 -100
+wait 400
+set 86 -100
+wait 400
+set 86 -100
+wait 400
+set 86 -90
+wait 400
+set 86 -80
+wait 400
+set 86 -70
+wait 400
+set 86 -60
+wait 400
+set 86 -50
+wait 400
+set 86 -40
+wait 400
+set 86 -30
+wait 400
+set 86 -20
+wait 400
+set 86 -10
+wait 400
+set 86 0
+wait 400
+set 86 10
+wait 400
+set 86 20
+wait 400
+set 86 30
+wait 400
+set 86 40
+wait 400
+set 86 50
+wait 400
+set 86 60
+wait 400
+set 86 70
+wait 400
+set 86 80
+wait 400
+set 86 90
+wait 400
+set 86 100
+wait 400
+set 86 100
+wait 400
+set 86 100
+wait 400
+set 86 100
+wait 400
+set 86 100
+wait 400
+set 86 100
+wait 400
+set 86 90
+wait 400
+set 86 80
+wait 400
+set 86 70
+wait 400
+set 86 60
+wait 400
+set 86 50
+wait 400
+set 86 40
+wait 400
+set 86 30
+wait 400
+set 86 20
+wait 400
+set 86 10
+wait 400
+set 86 0
+wait 400
+wait 3000
+wavstop
+wav live-thick.wav
+wait 3000
+set 87 -10
+wait 400
+set 87 -20
+wait 400
+set 87 -30
+wait 400
+set 87 -40
+wait 400
+set 87 -50
+wait 400
+set 87 -60
+wait 400
+set 87 -70
+wait 400
+set 87 -80
+wait 400
+set 87 -90
+wait 400
+set 87 -100
+wait 400
+set 87 -100
+wait 400
+set 87 -100
+wait 400
+set 87 -100
+wait 400
+set 87 -100
+wait 400
+set 87 -100
+wait 400
+set 87 -90
+wait 400
+set 87 -80
+wait 400
+set 87 -70
+wait 400
+set 87 -60
+wait 400
+set 87 -50
+wait 400
+set 87 -40
+wait 400
+set 87 -30
+wait 400
+set 87 -20
+wait 400
+set 87 -10
+wait 400
+set 87 0
+wait 400
+set 87 10
+wait 400
+set 87 20
+wait 400
+set 87 30
+wait 400
+set 87 40
+wait 400
+set 87 50
+wait 400
+set 87 60
+wait 400
+set 87 70
+wait 400
+set 87 80
+wait 400
+set 87 90
+wait 400
+set 87 100
+wait 400
+set 87 100
+wait 400
+set 87 100
+wait 400
+set 87 100
+wait 400
+set 87 100
+wait 400
+set 87 100
+wait 400
+set 87 90
+wait 400
+set 87 80
+wait 400
+set 87 70
+wait 400
+set 87 60
+wait 400
+set 87 50
+wait 400
+set 87 40
+wait 400
+set 87 30
+wait 400
+set 87 20
+wait 400
+set 87 10
+wait 400
+set 87 0
+wait 400
+wait 3000
+wavstop
+wav live-motion.wav
+wait 3000
+set 88 -10
+wait 400
+set 88 -20
+wait 400
+set 88 -30
+wait 400
+set 88 -40
+wait 400
+set 88 -50
+wait 400
+set 88 -60
+wait 400
+set 88 -70
+wait 400
+set 88 -80
+wait 400
+set 88 -90
+wait 400
+set 88 -100
+wait 400
+set 88 -100
+wait 400
+set 88 -100
+wait 400
+set 88 -100
+wait 400
+set 88 -100
+wait 400
+set 88 -100
+wait 400
+set 88 -90
+wait 400
+set 88 -80
+wait 400
+set 88 -70
+wait 400
+set 88 -60
+wait 400
+set 88 -50
+wait 400
+set 88 -40
+wait 400
+set 88 -30
+wait 400
+set 88 -20
+wait 400
+set 88 -10
+wait 400
+set 88 0
+wait 400
+set 88 10
+wait 400
+set 88 20
+wait 400
+set 88 30
+wait 400
+set 88 40
+wait 400
+set 88 50
+wait 400
+set 88 60
+wait 400
+set 88 70
+wait 400
+set 88 80
+wait 400
+set 88 90
+wait 400
+set 88 100
+wait 400
+set 88 100
+wait 400
+set 88 100
+wait 400
+set 88 100
+wait 400
+set 88 100
+wait 400
+set 88 100
+wait 400
+set 88 90
+wait 400
+set 88 80
+wait 400
+set 88 70
+wait 400
+set 88 60
+wait 400
+set 88 50
+wait 400
+set 88 40
+wait 400
+set 88 30
+wait 400
+set 88 20
+wait 400
+set 88 10
+wait 400
+set 88 0
+wait 400
+wait 3000
+wavstop
+wav live-space.wav
+wait 3000
+set 89 -10
+wait 400
+set 89 -20
+wait 400
+set 89 -30
+wait 400
+set 89 -40
+wait 400
+set 89 -50
+wait 400
+set 89 -60
+wait 400
+set 89 -70
+wait 400
+set 89 -80
+wait 400
+set 89 -90
+wait 400
+set 89 -100
+wait 400
+set 89 -100
+wait 400
+set 89 -100
+wait 400
+set 89 -100
+wait 400
+set 89 -100
+wait 400
+set 89 -100
+wait 400
+set 89 -90
+wait 400
+set 89 -80
+wait 400
+set 89 -70
+wait 400
+set 89 -60
+wait 400
+set 89 -50
+wait 400
+set 89 -40
+wait 400
+set 89 -30
+wait 400
+set 89 -20
+wait 400
+set 89 -10
+wait 400
+set 89 0
+wait 400
+set 89 10
+wait 400
+set 89 20
+wait 400
+set 89 30
+wait 400
+set 89 40
+wait 400
+set 89 50
+wait 400
+set 89 60
+wait 400
+set 89 70
+wait 400
+set 89 80
+wait 400
+set 89 90
+wait 400
+set 89 100
+wait 400
+set 89 100
+wait 400
+set 89 100
+wait 400
+set 89 100
+wait 400
+set 89 100
+wait 400
+set 89 100
+wait 400
+set 89 90
+wait 400
+set 89 80
+wait 400
+set 89 70
+wait 400
+set 89 60
+wait 400
+set 89 50
+wait 400
+set 89 40
+wait 400
+set 89 30
+wait 400
+set 89 20
+wait 400
+set 89 10
+wait 400
+set 89 0
+wait 400
+wait 3000
+wavstop
+set 51 0
+wav live-space-tail.wav
+set 89 -100
+wait 4000
+tap PLAY
+wait 4000
+tap PLAY
+set 89 0
+wait 4000
+tap PLAY
+wait 4000
+tap PLAY
+set 89 100
+wait 4000
+tap PLAY
+wait 4000
+tap PLAY
+wait 1000
+wavstop

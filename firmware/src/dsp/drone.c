@@ -78,7 +78,7 @@ static const dr_param_t PARAMS[DR_NPARAMS] = {
     {"Pitch lock", 0, 1, 1}, {"Movement", 0, 100, 50}, {"Feedback", 0, 100, 0}, {"Character", 0, 100, 0},
     {"Wander", 0, 100, 0}, {"Age", 0, 100, 0}, {"Shift move", 0, 2 * DR_SHIFT_MID, 2 * DR_SHIFT_MID}, {"Scale", 0, DR_NWSCALE - 1, 0},
     {"D5 depth", 0, 100, 70}, {"E5 depth", 0, 100, 100}, {"F5 depth", 0, 100, 100}, {"G5 depth", 0, 100, 70},
-    {"D5 time", 0, 100, 30}, {"E5 time", 0, 100, 40}, {"F5 time", 0, 100, 35}, {"G5 time", 0, 100, 35},
+    {"Dark-Bright", -100, 100, 0}, {"Thickness", -100, 100, 0}, {"Motion", -100, 100, 0}, {"Space", -100, 100, 0},
     {"D5 latch", 0, 100, 0}, {"E5 latch", 0, 100, 0}, {"F5 latch", 0, 100, 0}, {"G5 latch", 0, 100, 0},
     {"Type", 0, DR_NDLY - 1, DR_DLY_TAPE}, {"Length", 0, 100, 60}, {"Damp", 0, 100, 40}, {"Pressure", 0, 100, 50},
     {"Drive", 0, 100, 0}, {"Into rev", 0, DR_NROUTE - 1, 0}, {"Division", 0, DR_NDIV - 1, 2},
@@ -657,7 +657,7 @@ void dr_param_text(int i, int v, char *b)
 }
 
 /* -------------------------------------------------------------- commands --- */
-enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST };
+enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO };
 /* a load (boot, project_apply) posts every value at once, before the render drains any: the queue holds
  * them all (at 64 the last values of a saved sound were dropped at start-up, the macros among them) */
 #define QN 128u
@@ -683,6 +683,15 @@ void dr_pslide(int param, int ms) { post(C_PSLIDE, param, ms); }
 void dr_lfo_reset(void) { post(C_LFO_RESET, 0, 0); }
 void dr_seed(uint32_t s) { post(C_SEED, (int)(s >> 16 & 0xFFu), (int)(s & 0xFFFFu)); }
 void dr_gesture(int g, int amt) { post(C_GEST, g, amt); }
+void dr_chord(int g, int main_c, int iv_c, int pon)
+{
+    if (g < 0 || g >= DR_NGROUPS)
+        return;
+    post(C_CHORD, g * 4 + 0, main_c);
+    post(C_CHORD, g * 4 + 1, iv_c);
+    post(C_CHORD, g * 4 + 2, pon);
+}
+void dr_chord_go(int on, int snap) { post(C_CHORD_GO, snap < 0 ? 0 : snap > 100 ? 100 : snap, on); }
 
 /* ----------------------------------------------------------------- state --- */
 volatile float dr_level[DR_NGROUPS];
@@ -733,6 +742,8 @@ typedef struct {
     /* MORPH: where each switch's change has got to, moving to its setting over the Morph time */
     float wm[3];                                  /* the filter mode's weights: LP, BP, HP */
     float pg;                                     /* the partner's gain, 0..1 */
+    float pm, lm, pe;                             /* Thickness: the partner's share left and the drone's (gliding);
+                                                   * the partner's gain heard, pg x pm */
     float ig;                                     /* a gesture's interval for the partner coming or going: its gain */
     float ov;                                     /* ... or a gesture's own (semitones; CHORD), when ovon */
     int ovon;
@@ -758,6 +769,10 @@ typedef struct {
     float xs;                                     /* SNARL (v0.3, Cross-mod's fourth): how far in, 0..1 */
     float xp, xh, xc;                             /* CROSS-FM (v0.3): how far in, 0..1; the other's sound's low part;
                                                    * the limited sound's mean */
+    /* the chord layer (dr_chord): while con, the main oscillator plays cp, not the Pitch; while cia, the partner's
+     * interval is civ, gliding to civt (or, con off, back to its own) by civr a tick; its gain to cpon by cpgs */
+    uint8_t con, cia, cpon;
+    float cp, civ, civt, civr, cpgs;
     uint8_t rt[2], rp[2];                         /* the LFO routes (osc, filter): the tap now, the one before */
     float rw[2];                                  /* ... from the one before to now, 0..1 */
     float dw[2];                                  /* their destinations: osc 0 pitch .. 1 X-WAVE, filter 0
@@ -778,6 +793,12 @@ static float tick_d[DR_NGROUPS], tick_u[DR_NGROUPS];
  * root, 1 the third, 2 the top note, 3 the fifth) and how many octaves up */
 static float chord_t[DR_NGROUPS];
 static int chord_on[DR_NGROUPS];
+/* the chord layer: each drone's notes as sent (dr_chord: the main note, MIDI x 100; the partner's interval, cents;
+ * the partner on), taken up together by dr_chord_go. A change dips the level (ch_a deep: 15 ms down, held a moment),
+ * swaps at the bottom, then glides there over ch_ms while the level comes back (150 ms); ch_m the level now, 0..1 */
+static int16_t chs_main[DR_NGROUPS], chs_iv[DR_NGROUPS];
+static uint8_t chs_pon[DR_NGROUPS], ch_on, ch_dir;   /* ch_dir: 1 going down, 2 coming back, 0 resting */
+static float ch_ms, ch_a, ch_e, ch_m = 1.0f;
 static const uint8_t CHORD_V[5][4] = {{1, 1, 2, 1}, {1, 1, 2, 2}, {0, 1, 1, 2}, {2, 1, 1, 2}, {3, 1, 1, 2}};
 static int chord_vi;
 /* A scale's note on the Tuning (Evan, 2026-10-30): its interval over drone I, semitones; cur as on 12-tone, j its pure
@@ -948,6 +969,7 @@ void dr_init(void)
     for (g = 0; g < DR_NGROUPS; g++) {
         grp_t *v = &grp[g];
         *v = (grp_t){0};
+        v->pm = v->lm = 1.0f;
         v->pitch = v->ps1 = v->ps2 = v->st = (float)par[DR_GP(g, GP_PITCH)] * 0.01f;
         v->cut = 4.32192809f + (float)par[DR_GP(g, GP_CUTOFF)] * 0.00981378f;
         v->gf = v->gtarget = g < 2 && DR_OUT(par[P_II_OUT], g) ? 0.0f : 1.0f;   /* a drone out on its own: out */
@@ -1002,8 +1024,9 @@ void dr_init(void)
  * offset breathing slowly (PULSE_HZ) while it's in; WOW a drone's pitch wavering slowly, d cents; TICKD / TICKU the
  * sub's own rate (p a drone); CHORD a
  * partner's own interval (p a drone, d 1 or 2), from Wander's scale (v0.3); DOWN as TO, down toward d (the Swell's
- * Shape toward its gate). */
-enum { MK_ADD, MK_SW, MK_OFF, MK_ZERO, MK_TO, MK_SHIFT, MK_BUMP, MK_PULSE, MK_WOW, MK_TICKD, MK_TICKU, MK_CHORD, MK_DOWN };
+ * Shape toward its gate); PFADE a drone's partner (p) faded out, GFADE the whole drone (Thickness). */
+enum { MK_ADD, MK_SW, MK_OFF, MK_ZERO, MK_TO, MK_SHIFT, MK_BUMP, MK_PULSE, MK_WOW, MK_TICKD, MK_TICKU, MK_CHORD, MK_DOWN,
+       MK_PFADE, MK_GFADE };
 typedef struct {
     uint8_t p, kind;                             /* the value (or, for a pitch move, the drone) and the kind */
     int16_t d;                                   /* the amount at full (MK_ADD; MK_TO: the value aimed at) */
@@ -1089,12 +1112,57 @@ static const move_t MACRO_MV[DR_NGTYPE][MV_N] = {
 /* AGE (Life), a state: as the old tape wears, darker, a little hiss, the pitch wavering slowly (wow) and a little
  * quickly (flutter); it wears in (and out) over AGE_S. Not Character (Evan, 2026-10-20: the two knobs overlapped) */
 static float age_mk = 1.0f;                      /* that makeup now, as a gain, by Age as heard */
+static float dk_mk = 1.0f;                       /* ... and Dark-Bright's, down from 0 (the same as Age's, as far) */
 static const move_t AGE_MV[MV_N] = {
     {DR_GP(0, GP_CUTOFF), MK_ADD, AGE_CUT, 0, 100, 0, 100}, {DR_GP(1, GP_CUTOFF), MK_ADD, AGE_CUT, 0, 100, 0, 100},
     {DR_GP(0, GP_NOISE), MK_ADD, AGE_NZ, 0, 100, 0, 100}, {DR_GP(1, GP_NOISE), MK_ADD, AGE_NZ, 0, 100, 0, 100},
     {0, MK_WOW, AGE_WOW, 0, 100, 0, 100}, {1, MK_WOW, AGE_WOW, 0, 100, 0, 100},
 };
 #define AGE_S 20.0f                              /* Age wears in from none to full this long */
+/* THE LIVE MACROS: four knobs, each two rows of moves, down (to -100) and up (to 100), at 0 nothing. A knob is where it
+ * is, so a move's window is only its way in (in0 .. in1 of the turn): the parts arrive in order as the knob turns */
+#define LIVE_N 9
+static const move_t LIVE_MV[4][2][LIVE_N] = {
+    /* DARK-BRIGHT: the cutoffs first, the whole way; then, darker, the noise goes, the waves soften toward the sine,
+     * the sub comes up and the reverb's tail darkens; brighter, the waves toward the saw, a little resonance, the
+     * tail opens */
+    {{{DR_GP(0, GP_CUTOFF), MK_ADD, -250, 0, 100, 0, 0}, {DR_GP(1, GP_CUTOFF), MK_ADD, -250, 0, 100, 0, 0},
+      {DR_GP(0, GP_NOISE), MK_ZERO, 60, 20, 80, 0, 0}, {DR_GP(1, GP_NOISE), MK_ZERO, 60, 20, 80, 0, 0},
+      {DR_GP(0, GP_WAVE), MK_ZERO, 50, 40, 100, 0, 0}, {DR_GP(1, GP_WAVE), MK_ZERO, 50, 40, 100, 0, 0},
+      {DR_GP(0, GP_MIX), MK_ADD, 20, 30, 100, 0, 0}, {DR_GP(1, GP_MIX), MK_ADD, 20, 30, 100, 0, 0},
+      {P_REV_DAMP, MK_TO, 85, 20, 100, 0, 0}},
+     {{DR_GP(0, GP_CUTOFF), MK_ADD, 250, 0, 100, 0, 0}, {DR_GP(1, GP_CUTOFF), MK_ADD, 250, 0, 100, 0, 0},
+      {DR_GP(0, GP_WAVE), MK_TO, 67, 30, 100, 0, 0}, {DR_GP(1, GP_WAVE), MK_TO, 67, 30, 100, 0, 0},
+      {DR_GP(0, GP_RESO), MK_ADD, 80, 40, 100, 0, 0}, {DR_GP(1, GP_RESO), MK_ADD, 80, 40, 100, 0, 0},
+      {P_REV_DAMP, MK_ZERO, 0, 0, 60, 0, 0}}},
+    /* THICKNESS: thinner, the beating goes and the voices leave one by one, the top first: drone II's partner, drone II,
+     * drone I's partner, to the bass alone; thicker, the partners on and beating, the drones wider apart, a little
+     * drive and noise */
+    {{{DR_GP(0, GP_DETUNE), MK_ZERO, 0, 0, 40, 0, 0}, {DR_GP(1, GP_DETUNE), MK_ZERO, 0, 0, 40, 0, 0},
+      {1, MK_PFADE, 1, 0, 35, 0, 0}, {1, MK_GFADE, 1, 35, 70, 0, 0}, {0, MK_PFADE, 1, 70, 100, 0, 0},
+      {DR_GP(0, GP_MIX), MK_ZERO, 0, 50, 100, 0, 0}, {DR_GP(1, GP_MIX), MK_ZERO, 0, 50, 100, 0, 0}},
+     {{DR_GP(0, GP_PARTNER), MK_SW, 0, 0, 1, 0, 0}, {DR_GP(1, GP_PARTNER), MK_SW, 0, 0, 1, 0, 0},
+      {DR_GP(0, GP_DETUNE), MK_TO, 60, 0, 60, 0, 0}, {DR_GP(1, GP_DETUNE), MK_TO, 60, 0, 60, 0, 0},
+      {P_WIDTH, MK_TO, 90, 0, 60, 0, 0},
+      {DR_GP(0, GP_DRIVE), MK_ADD, 20, 60, 100, 0, 0},
+      {DR_GP(1, GP_DRIVE), MK_ADD, 20, 60, 100, 0, 0}, {DR_GP(0, GP_NOISE), MK_ADD, 8, 50, 100, 0, 0},
+      {DR_GP(1, GP_NOISE), MK_ADD, 8, 50, 100, 0, 0}}},
+    /* MOTION: stiller, the LFOs and Drift ease to nothing, then the Swell and the delay's wobble; more, Movement and
+     * Drift up, then the filters breathe slowly against each other, 1.5 octaves (a sound with no LFO routed moves
+     * too) */
+    {{{P_MOVE, MK_ZERO, 0, 0, 70, 0, 0}, {P_DRIFT, MK_ZERO, 0, 0, 70, 0, 0}, {P_PULSE_DEPTH, MK_ZERO, 0, 30, 100, 0, 0},
+      {P_DLY_LFO_DEPTH, MK_ZERO, 0, 30, 100, 0, 0}},
+     {{P_MOVE, MK_TO, 100, 0, 70, 0, 0}, {P_DRIFT, MK_TO, 70, 0, 60, 0, 0},
+      {DR_GP(0, GP_CUTOFF), MK_PULSE, 150, 30, 100, 0, 0}, {DR_GP(1, GP_CUTOFF), MK_PULSE, -150, 30, 100, 0, 0}}},
+    /* SPACE: closer, the delay goes, then the reverb, shorter; further, the reverb opens first, longer, then the delay
+     * and its repeats */
+    {{{P_DLY_MIX, MK_ZERO, 0, 0, 60, 0, 0}, {P_REV_MIX, MK_ZERO, 0, 20, 100, 0, 0}, {P_REV_LEN, MK_ZERO, 50, 30, 100, 0, 0}},
+     {{P_REV_MIX, MK_TO, 65, 0, 60, 0, 0}, {P_REV_LEN, MK_TO, 85, 20, 100, 0, 0}, {P_DLY_MIX, MK_TO, 45, 30, 90, 0, 0},
+      {P_DLY_REPEATS, MK_TO, 65, 40, 100, 0, 0}}},
+};
+static float th_pm[DR_NGROUPS] = {1.0f, 1.0f}, th_gm[DR_NGROUPS] = {1.0f, 1.0f};   /* Thickness: each drone's partner
+                                                  * and the whole drone, as far as they're left in, 0..1 */
+static int live_on(void) { return base[P_DARK] | base[P_THICK] | base[P_MOTION] | base[P_SPACE]; }
 static float mv_lvl[DR_NGEST][MV_N];             /* each key's moves' levels now, 0..1 (gliding) */
 static float mac_last[DR_NGEST];                 /* each key's amount last time ... */
 static uint8_t mac_out;                          /* ... and which are on their way out (bit m: 8 gestures) */
@@ -1122,8 +1190,9 @@ static void macro_reset(void)
     }
     mac_out = 0;
     mv_moving = 0;
+    th_pm[0] = th_pm[1] = th_gm[0] = th_gm[1] = 1.0f;
     mac_ph = age_l = age_ph = 0.0f;
-    age_mk = 1.0f;
+    age_mk = dk_mk = 1.0f;
     wand_st = wand_to = 0.0f;
     wand_n = 0;
     wand_v = 0;
@@ -1267,6 +1336,8 @@ static void mv_add(const move_t *v, float l, float *off, uint8_t *on, float *pm,
         chord_on[v->p] = 1;
         break;
     }
+    case MK_PFADE: th_pm[v->p] = fm_minf(th_pm[v->p], 1.0f - l); break;
+    case MK_GFADE: th_gm[v->p] = fm_minf(th_gm[v->p], 1.0f - l); break;
     case MK_TICKD: tick_d[v->p] = fm_maxf(tick_d[v->p], l); break;
     case MK_TICKU: tick_u[v->p] = fm_maxf(tick_u[v->p], l); break;
     case MK_ZERO: off[v->p] -= (float)base[v->p] * l * (v->d ? (float)v->d * 0.01f : 1.0f); break;
@@ -1313,6 +1384,7 @@ static void macro_apply(uint32_t n)              /* the offsets again, n samples
     }
     mv_moving = 0;
     tick_d[0] = tick_d[1] = tick_u[0] = tick_u[1] = 0.0f;
+    th_pm[0] = th_pm[1] = th_gm[0] = th_gm[1] = 1.0f;
     chord_on[0] = chord_on[1] = 0;
     for (m = 0; m < DR_NGEST; m++) {
         const move_t *row = MACRO_MV[m];
@@ -1360,6 +1432,17 @@ static void macro_apply(uint32_t n)              /* the offsets again, n samples
             for (k = 0; k < MV_N && (AGE_MV[k].d || AGE_MV[k].kind != MK_ADD); k++)
                 mv_add(&AGE_MV[k], age_l, off, on, pm, &flags);
     }
+    dk_mk = base[P_DARK] < 0 ? fm_exp2f(AGE_MK * (1.0f / 6.0206f) * (float)base[P_DARK] * -0.01f) : 1.0f;
+    for (m = 0; m < 4; m++) {                    /* THE LIVE MACROS: where each knob is */
+        const int lv = base[P_DARK + m];
+        const float a = (float)(lv < 0 ? -lv : lv) * 0.01f;
+        const move_t *row = LIVE_MV[m][lv > 0];
+        for (k = 0; lv && k < LIVE_N && (row[k].d || row[k].kind != MK_ADD); k++) {
+            const float l = mv_ease(a, row[k].in0, row[k].in1);
+            if (l > 0.0f)
+                mv_add(&row[k], l, off, on, pm, &flags);
+        }
+    }
     if (base[P_WANDER] || wand_st != 0.0f) {     /* WANDER */
         wander_run(n);
         pm[1] += wand_st;
@@ -1405,6 +1488,73 @@ float dr_age_now(float *ph)
     return age_l;
 }
 
+/* the chord layer: what dr_chord_go's Snap (0..100) means. The glide: 4 s at 0, 300 ms at 50 (evenly in log time
+ * between), none at 100 (in a straight line from 50). The dip: none at 0, 15 % at 50 (a breath, so a change is
+ * heard landing), all the way at 100 (each change a new attack, as a pad's) */
+static float snap_ms(int s)
+{
+    return s <= 50 ? 4000.0f * fm_exp2f(-3.7369656f * (float)s * 0.02f) : 300.0f * (float)(100 - s) * 0.02f;
+}
+static float snap_dip(int s)
+{
+    return s <= 50 ? 0.15f * (float)s * 0.02f : 0.15f + 0.85f * (float)(s - 50) * 0.02f;
+}
+static void chord_swap(void)                     /* the bottom of the dip: each drone starts for its new notes */
+{
+    int g;
+    for (g = 0; g < DR_NGROUPS; g++) {
+        grp_t *v = &grp[g];
+        const float k = ch_ms > 0.0f ? (float)CR * 1000.0f / (ch_ms * DR_SR) : 0.0f;   /* a tick's share of the glide */
+        const float to = ch_on ? (float)chs_main[g] * 0.01f : (float)par[DR_GP(g, GP_PITCH)] * 0.01f;
+        if (!v->cia)                             /* from the interval it has now */
+            v->civ = v->ovon ? v->ov : v->ivs;
+        v->con = ch_on;
+        v->cia = 1;
+        v->cpon = ch_on ? chs_pon[g] : 0;
+        if (ch_on)
+            v->cp = to;
+        v->civt = (float)chs_iv[g] * 0.01f;
+        v->slide = k > 0.0f ? fm_maxf(fm_fabsf(to - v->st) * k, 1e-5f) : 0.0f;
+        v->civr = k > 0.0f ? fm_maxf(fm_fabsf(v->civt - v->civ) * k, 1e-5f) : 1e6f;
+        v->cpgs = (float)CR * 1000.0f / (fm_maxf(ch_ms, 20.0f) * DR_SR);
+    }
+}
+static void chord_go(int on, int snap)
+{
+    const float d = snap_dip(snap), now = ch_a * fm_minf(ch_e, 1.0f);   /* (a dip still coming back: on from where it is) */
+    ch_on = (uint8_t)on;
+    ch_ms = snap_ms(snap);
+    if (d > 0.0f && fade > 0.0f) {               /* down first */
+        ch_a = fm_maxf(d, now);
+        ch_e = now / ch_a;
+        ch_dir = 1;
+    } else {                                     /* no dip, or nothing heard: at once */
+        chord_swap();
+        ch_a = now;
+        ch_e = now > 0.0f ? 1.0f : 0.0f;
+        ch_dir = now > 0.0f ? 2 : 0;
+    }
+}
+static void chord_run(uint32_t n)                /* the dip, a block on */
+{
+    if (ch_dir == 1) {                           /* down, then held there 15 ms x its depth (the level's own 6 ms
+                                                  * smoothing gets there too, so a jump at the bottom isn't heard) */
+        ch_e += (float)n * (1.0f / (0.015f * DR_SR));
+        if (ch_e >= 1.0f + ch_a) {
+            ch_e = 1.0f;
+            ch_dir = 2;
+            chord_swap();
+        }
+    } else if (ch_dir == 2) {
+        ch_e -= (float)n * (1.0f / (0.15f * DR_SR));
+        if (ch_e <= 0.0f) {
+            ch_e = 0.0f;
+            ch_dir = 0;
+        }
+    }
+    ch_m = 1.0f - ch_a * fm_minf(ch_e, 1.0f);
+}
+
 static void drain(void)
 {
     while (q_r != q_w) {
@@ -1427,8 +1577,9 @@ static void drain(void)
                     grp[0].gtarget = DR_OUT(base[a], 0) ? 0.0f : 1.0f;
                     grp[1].gtarget = DR_OUT(base[a], 1) ? 0.0f : 1.0f;
                 }
-                if (a >= P_WANDER && a <= P_GD_3)
-                    mac_dirty = 1;             /* an amount or a depth: the offsets again */
+                if ((a >= P_WANDER && a <= P_SPACE) || live_on())
+                    mac_dirty = 1;             /* an amount or a depth, or any value under a live macro (its moves
+                                                * reach from the value): the offsets again */
                 {   /* its glide: a step a sample, to arrive over the time asked for (or 25 ms) */
                     float ms = pslide_ms[a] ? (float)pslide_ms[a] : 25.0f;
                     pfstep[a] = fm_maxf(fm_fabsf((float)par[a] - pfs[a]) * 1000.0f / (ms * DR_SR), 1e-7f);
@@ -1437,7 +1588,8 @@ static void drain(void)
                 if (a < P_XMOD && a % GP_N == GP_PITCH) {   /* a pitch: a slide asked for (the Glide after it) */
                     grp_t *v = &grp[a / GP_N];
                     float d = fm_fabsf((float)par[a] * 0.01f - v->st);
-                    v->slide = v->slide_ms ? fm_maxf(d * (float)CR * 1000.0f / ((float)v->slide_ms * DR_SR), 1e-5f) : 0.0f;
+                    if (!v->con)                /* (a chord holds the pitch: its own slide stays) */
+                        v->slide = v->slide_ms ? fm_maxf(d * (float)CR * 1000.0f / ((float)v->slide_ms * DR_SR), 1e-5f) : 0.0f;
                     v->slide_ms = 0;
                 } else if (a == P_PLINK_OFF) {  /* the link offset slides as drone II's pitch would */
                     grp_t *v = &grp[1];
@@ -1473,6 +1625,19 @@ static void drain(void)
             break;
         case C_DUCK:
             duck_to = a ? 0.0f : 1.0f;
+            break;
+        case C_CHORD:
+            if (a / 4 < DR_NGROUPS) {
+                if (a % 4 == 0)
+                    chs_main[a / 4] = (int16_t)b;
+                else if (a % 4 == 1)
+                    chs_iv[a / 4] = (int16_t)b;
+                else
+                    chs_pon[a / 4] = (uint8_t)(b != 0);
+            }
+            break;
+        case C_CHORD_GO:
+            chord_go(b != 0, a);
             break;
         case C_VOICE:
             if (a < DR_NGROUPS)
@@ -1848,6 +2013,7 @@ static float sub_div(int s)
 {
     return s == 6 ? 0.0625f : s == 5 ? 0.125f : s == 4 ? 0.2f : s == 3 ? 1.0f / 3.0f : s == 2 ? 0.25f : 0.5f;
 }
+#define TH_STEP ((float)CR / (0.06f * DR_SR))   /* Thickness's voices: in or out in 60 ms at most (a knob's turn) */
 static void morph_snap(int g)                    /* all of a drone's switches where they're set */
 {
     grp_t *v = &grp[g];
@@ -1855,8 +2021,13 @@ static void morph_snap(int g)                    /* all of a drone's switches wh
     int i;
     for (i = 0; i < 3; i++)
         v->wm[i] = p[GP_MODE] == i ? 1.0f : 0.0f;
-    v->pg = p[GP_PARTNER] ? 1.0f : 0.0f;
+    v->pg = (v->con ? v->cpon : p[GP_PARTNER] != 0) ? 1.0f : 0.0f;
+    v->pm = th_pm[g];
+    v->lm = th_gm[g];
+    v->pe = v->pg * v->pm;
     v->ovon = 0;
+    v->cia = v->con;                             /* (a chord's interval where it's going) */
+    v->civ = v->civt;
     v->ov = 0.0f;
     v->ig = 1.0f;
     v->ivi = -1;
@@ -1884,7 +2055,11 @@ static void morph_tick(int g, float step)        /* one control tick of the swit
     int i;
     for (i = 0; i < 3; i++)
         v->wm[i] = toward(v->wm[i], p[GP_MODE] == i ? 1.0f : 0.0f, step);
-    v->pg = toward(v->pg, p[GP_PARTNER] ? 1.0f : 0.0f, step);
+    v->pg = v->cia ? toward(v->pg, (v->con ? v->cpon : p[GP_PARTNER] != 0) ? 1.0f : 0.0f, fm_maxf(step, v->cpgs))
+                   : toward(v->pg, p[GP_PARTNER] ? 1.0f : 0.0f, step);
+    v->pm = toward(v->pm, th_pm[g], TH_STEP);
+    v->lm = toward(v->lm, th_gm[g], TH_STEP);
+    v->pe = v->pg * v->pm;
     v->nc = pfs[DR_GP(g, GP_NCOLOR)] * 0.01f;    /* the colour, a blend white .. pink, gliding as a knob does */
     if (v->ovon != chord_on[g] || (chord_on[g] && fm_fabsf(v->ov - chord_t[g]) > 1e-3f)) {
         v->ig -= 2.0f * step;                    /* a gesture's interval for the partner (CHORD, v0.3): down, swap, up */
@@ -2018,7 +2193,7 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
      * octave under the cutoff, times (1 - rin), so the passband stays level and the peak is left alone */
     const float r0 = pv[GP_RESO] * 0.001f;
     float k = 2.0f - 2.1f * r0, rin = 1.0f - 0.6f * r0 * r0;    /* per tick, when the LFO moves the resonance */
-    const float lvl = pv[GP_LEVEL] * pv[GP_LEVEL] * 0.0001f * 0.6f * age_mk;   /* an audio taper: squared (50 is -12 dB) */
+    const float lvl = pv[GP_LEVEL] * pv[GP_LEVEL] * 0.0001f * 0.6f * age_mk * dk_mk;   /* an audio taper: squared (50 is -12 dB) */
     /* drone I left, drone II right, as far apart as Width says (as it glides: read raw, each detent clicked); a drone
      * alone (the other out, II OUT) moves to the middle as the other fades (Evan, 2026-11-10: Bare sat on the left) */
     const float width = pfs[P_WIDTH] * 0.01f * grp[1 - g].gf, pan = g ? 0.5f + 0.5f * width : 0.5f - 0.5f * width;
@@ -2057,14 +2232,14 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
     /* Unison with no Detune is one fat oscillator: the partner is pulled into phase with the main (~25 ms),
      * so it can't sit half a cycle out and cancel it (it did: -20 dB, depending on what came before), and
      * Drift's wanders don't beat them. Any Detune lets it go. */
-    const int plock = !v->ovon && iv == DR_IV_UNISON && pv[GP_DETUNE] < 0.5f;
+    const int plock = !v->ovon && !v->cia && iv == DR_IV_UNISON && pv[GP_DETUNE] < 0.5f;
     const float tune = 12.0f * fm_log2f(1.0f + (float)par[P_TUNE] * (1.0f / 4400.0f)),   /* A in Hz, as semitones */
-                target = (float)p[GP_PITCH] * 0.01f;
+                target = v->con ? v->cp : (float)p[GP_PITCH] * 0.01f;   /* a chord's note, or the Pitch */
     /* the cutoff, 0..1000 = log2 20 .. log2 18000 */
     const float cut_t = 4.32192809f + pv[GP_CUTOFF] * 0.00981378f;
     /* the links, on drone II: hard sync, pitch link, cross-mod (12 octaves a unit of drone I's sound, at
      * the top: its sound is about +-0.3, so +-3.6 octaves) */
-    const int link = g == 1 && par[P_PLINK];
+    const int link = g == 1 && par[P_PLINK] && !v->con;
     const float xamt = g == 1 ? depth_amtf(pfs[P_XMOD_AMT]) * 12.0f : 0.0f;
     const float famt_x = depth_amtf(pfs[P_XMOD_AMT]) * 10.0f;   /* CROSS-FM: the other's sound (~+-0.3) x 10 at the top */
     const float frate = fade_rate() * (float)CR;
@@ -2157,7 +2332,15 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
         }
         /* the switches, a tick nearer their settings (MORPH) */
         morph_tick(g, mstep);
-        og = (0.9f - 0.28f * v->pg) * omix;      /* main alone 0.9, with its partner 0.62 each */
+        if (v->cia) {                            /* a chord's interval for the partner, gliding (back to its own when
+                                                  * the chord's let go, then its own again) */
+            const float it = v->con ? v->civt : v->ovon ? v->ov : v->ivs, d = it - v->civ;
+            v->civ = fm_fabsf(d) <= v->civr ? it : v->civ + (d > 0.0f ? v->civr : -v->civr);
+            if (!v->con && v->civ == it)
+                v->cia = 0;
+            ival = v->civ;
+        }
+        og = (0.9f - 0.28f * v->pe) * omix;      /* main alone 0.9, with its partner 0.62 each */
         sg = sub * v->sg;
         sw = v->sw;
         xd = xamt * v->xm;
@@ -2226,7 +2409,7 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
             float mk_ = fhz < 55.0f ? fm_sqrtf(55.0f / fm_maxf(fhz, 0.5f)) : 1.0f;
             float pk_ = phz < 55.0f ? fm_sqrtf(55.0f / fm_maxf(phz, 0.5f)) : 1.0f;
             float sk_ = sd < 0.1f && shz < 55.0f ? fm_sqrtf(55.0f / fm_maxf(shz, 0.5f)) : 1.0f;   /* -3, -4 oct */
-            lk = v->pg > 0.0f ? fm_maxf(mk_, pk_) : mk_;
+            lk = v->pe > 0.0f ? fm_maxf(mk_, pk_) : mk_;
             if (sg > 0.0f)
                 lk = fm_maxf(lk, sk_);
             ilk = 1.0f / lk;
@@ -2246,7 +2429,8 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
         bk = 0.5f * gc / (1.0f + 0.5f * gc);     /* the makeup's one-pole, an octave under the cutoff */
         gend = v->gtarget > gf ? fm_minf(gf + frate, v->gtarget) : fm_maxf(gf - frate, v->gtarget);
         gstep = (gend - gf) * (1.0f / (float)CR);
-        lend = lv + (lvl * fm_exp2f(dw * 0.4f * v->wn[2]) - lv) * 0.06f;   /* ~6 ms: a Level turn never clicks */
+        lend = lv + (lvl * ch_m * v->lm * fm_exp2f(dw * 0.4f * v->wn[2]) - lv) * 0.06f;   /* ~6 ms: a Level turn never
+                                                  * clicks (ch_m: a chord change's dip; lm: Thickness) */
         lstep = (lend - lv) * (1.0f / (float)CR);
         for (j = j0; j < je; j++) {
             float ci = inc, cp = pinc, cs = sinc, x, y, v1, v2, v3, a;
@@ -2306,8 +2490,8 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
                     v->sync_next = -(d - nat) * f * f * 0.5f;
                 }
             }
-            if (v->pg > 0.0f)                   /* the partner, as loud as it's faded in */
-                x = (x * mlk + v->pg * v->ig * plk * xosc(wi, wf, pph, cp, pw)) * og;
+            if (v->pe > 0.0f)                   /* the partner, as loud as it's faded in */
+                x = (x * mlk + v->pe * v->ig * plk * xosc(wi, wf, pph, cp, pw)) * og;
             else
                 x *= og * mlk;
             if (sg > 0.0f)
@@ -2653,6 +2837,7 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
             sbuf[j] = 0;
         }
         if (fade > 0.0f || fade_target > 0.0f) {
+            chord_run(k);
             for (g = 0; g < DR_NGROUPS; g++)
                 DR_FAR(render_group)(g, k);
             sc_clk += k;
@@ -2668,8 +2853,8 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
                 morph_snap(g);
                 for (q = 0; q < DR_SCOPE_N; q++) /* and the drones are drawn flat */
                     dr_scope[g][q] = 0.0f;
-                float t = (float)par[DR_GP(g, GP_PITCH)] * 0.01f;
-                if (g == 1 && par[P_PLINK]) {
+                float t = v->con ? v->cp : (float)par[DR_GP(g, GP_PITCH)] * 0.01f;
+                if (g == 1 && par[P_PLINK] && !v->con) {
                     v->lofs = (float)par[P_PLINK_OFF] * 0.01f;
                     t = grp[0].pitch + v->lofs;
                 }

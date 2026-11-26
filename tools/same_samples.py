@@ -61,7 +61,7 @@ def run_all(tree, scripts, out, problems, new=frozenset()):
         d.mkdir(parents=True, exist_ok=True)
         r = subprocess.run([str(host), str(s), str(d)], cwd=tree, capture_output=True, text=True)
         crashed = r.returncode < 0 or ("unknown command" in r.stdout + r.stderr and s.name not in new)
-        if crashed or (r.returncode and s.parent.name == "golden"):
+        if crashed or (r.returncode and s.parent.name == "golden" and s.name not in new):
             tail = (r.stdout + r.stderr).strip().splitlines()[-5:]
             problems.append(f"{tree.name}: {s.parent.name}/{s.name} exited {r.returncode}: " + " / ".join(tail))
     d = out / "drone_render"
@@ -158,7 +158,10 @@ def main():
         if not pa.exists() or not pb.exists():
             v, why = "different", "only in " + ("this branch" if pb.exists() else "the base")
         else:
-            v, why = (compare_wav if n.suffix == ".wav" else compare_png)(pa, pb)
+            try:
+                v, why = (compare_wav if n.suffix == ".wav" else compare_png)(pa, pb)
+            except (wave.Error, EOFError):                # a run that stopped while recording: no header
+                v, why = "different", "unreadable: a run stopped while writing it"
         counts[v] += 1
         if v != "same":
             rows.append((v, str(n), why))

@@ -88,7 +88,7 @@ int main(void)
     const int16_t *a1, *a12, *b1, *b4;
     old_project(19u);
     check("a 0.1 project loads", project_load() == 0);
-    check("now format 44, on bank A", proj.format == 44u && PROJ_FORMAT == 44u && proj.bank == 0 && proj.mtime == MTIME_DEF);
+    check("now format 45, on bank A", proj.format == 45u && PROJ_FORMAT == 45u && proj.bank == 0 && proj.mtime == MTIME_DEF);
     check("a value 0.1 didn't have (Weight's depth) at its default", proj.par[P_GD_0] == dr_param_info(P_GD_0)->def);
     check("its sound is kept", proj.par[DR_GP(0, GP_PITCH)] == 4321);
     check("Colour pink (1) becomes 100, white stays 0",
@@ -151,15 +151,15 @@ int main(void)
         check("PR #14's project (23) loads: its sound kept, the gestures at their defaults, the set macros gone",
               project_load() == 0 && proj.par[P_FEEDBACK] == 40 && proj.par[P_WANDER] == 0 && proj.par[P_GD_1] == dr_param_info(P_GD_1)->def &&
                   proj.par[P_SHIFT_MOVE] == 1400 &&
-                  proj.par[P_GL_0] == 0 && proj.par[P_GR_3] == dr_param_info(P_GR_3)->def);
+                  proj.par[P_GL_0] == 0 && proj.par[P_SPACE] == 0);
         p23 = proj;                            /* PR #18's (24): the long swells */
         p23.format = 24u;
-        p23.par[P_GR_1] = 70;
+        p23.par[P_THICK] = 70;                 /* a swell's time then: the live macros' slot now */
         p23.par[P_GD_1] = 2;                   /* Shift's move then (a 4th down) */
         p23.par[P_GL_3] = 100;
         store_v31(&p23);
-        check("PR #18's project (24) loads: the swells to the new defaults, Shift's move moved, the latches let go",
-              project_load() == 0 && proj.par[P_GR_1] == dr_param_info(P_GR_1)->def &&
+        check("PR #18's project (24) loads: the old swells' slots at rest, Shift's move moved, the latches let go",
+              project_load() == 0 && proj.par[P_THICK] == 0 &&
                   proj.par[P_SHIFT_MOVE] == 200 && proj.par[P_GD_1] == dr_param_info(P_GD_1)->def &&
                   proj.par[P_GL_3] == 0);
     }
@@ -595,8 +595,8 @@ int main(void)
                                                  scene_has(0, 1) && scene_has(1, 2));
         check("... the Tuning 12-tone, no offsets (39, 2026-10-30)", proj.par[P_TUNING] == DR_TUN_12 &&
               scene_get(1, 2)[P_TUNING] == DR_TUN_12 && !proj.tun_off[0] && !proj.tun_off[1] && !proj.tun_off[2]);
-        check("... and saved as 44", project_save() == 0 && ((const project_t *)store[OBJ_PROJ])->format == 44u &&
-                                     ((const bank_t *)store[OBJ_BANKB])->format == 44u);
+        check("... and saved as 45", project_save() == 0 && ((const project_t *)store[OBJ_PROJ])->format == 45u &&
+                                     ((const bank_t *)store[OBJ_BANKB])->format == 45u);
     }
     {   /* 40: the Tunings reordered, simplest to richest (Evan, 2026-10-30): a 39 sound keeps its Tuning */
         static proj_v40_t o;
@@ -631,8 +631,8 @@ int main(void)
         check("... each keeps its Tuning: LMY, Shruti, Harmonics", proj.par[P_TUNING] == DR_TUN_LMY &&
               scene_get(0, 0) && scene_get(0, 0)[P_TUNING] == DR_TUN_SHRUTI && scene_get(1, 1) &&
               scene_get(1, 1)[P_TUNING] == DR_TUN_HARM);
-        check("... and saved as 44", project_save() == 0 && ((const project_t *)store[OBJ_PROJ])->format == 44u &&
-                                     ((const bank_t *)store[OBJ_BANKB])->format == 44u);
+        check("... and saved as 45", project_save() == 0 && ((const project_t *)store[OBJ_PROJ])->format == 45u &&
+                                     ((const bank_t *)store[OBJ_BANKB])->format == 45u);
     }
     {   /* 41: Tune in Hz, Sync (Evan, 2026-11-01): a 40 Tune in cents becomes the nearest 0.1 Hz; Sync on */
         static proj_v40_t o;
@@ -669,8 +669,8 @@ int main(void)
               scene_get(0, 0)[P_TUNE] == 129 && scene_get(1, 3)[P_TUNE] == -125);
         check("... Sync on, the fine tuning kept", proj.par[P_CLK_SYNC] == 1 && scene_get(1, 3)[P_CLK_SYNC] == 1 &&
                                                    proj.tun_off[1] == 7);
-        check("... and saved as 44", project_save() == 0 && ((const project_t *)store[OBJ_PROJ])->format == 44u &&
-                                     ((const bank_t *)store[OBJ_BANKB])->format == 44u);
+        check("... and saved as 45", project_save() == 0 && ((const project_t *)store[OBJ_PROJ])->format == 45u &&
+                                     ((const bank_t *)store[OBJ_BANKB])->format == 45u);
     }
     {   /* 43: the LFO rate 0..152, every second from 100 s to 10 s (Evan, 2026-11-07): a 41 rate (the project) and a 42
          * one (bank B, #78's test build) become the nearest step of the same speed */
@@ -710,8 +710,8 @@ int main(void)
         check("... 26 s is 74, 50 s 50, 0.53 Hz 106, 70 Hz 152", proj.par[P_LFO_RATE] == 74 &&
               scene_get(0, 0)[P_LFO_RATE] == 50 && scene_get(1, 3)[P_LFO_RATE] == 106 && scene_get(1, 4)[P_LFO_RATE] == 152);
         check("... the rest kept", proj.tun_off[1] == 7 && proj.par[P_TUNE] == 0 && scene_get(1, 3)[P_CLK_SYNC] == 1);
-        check("... and saved as 44", project_save() == 0 && ((const project_t *)store[OBJ_PROJ])->format == 44u &&
-                                     ((const bank_t *)store[OBJ_BANKB])->format == 44u);
+        check("... and saved as 45", project_save() == 0 && ((const project_t *)store[OBJ_PROJ])->format == 45u &&
+                                     ((const bank_t *)store[OBJ_BANKB])->format == 45u);
     }
     {   /* format 43 (Evan, 2026-11-08): the LFO on X-Wave and the resonance turns at their ends, its depth 100 their
          * whole range; a saved sound keeps the range it reached */
@@ -767,8 +767,8 @@ int main(void)
                scene_get(BANK_D, 1)[DR_GP(1, GP_FLFO_DEPTH)]);
         check("... Movement 0 converted as at 50 (X-Wave 40 is 57), a negative send on both LFOs keeps its sign (-30 is -50)",
               scene_get(BANK_D, 1)[DR_GP(0, GP_OLFO_DEPTH)] == 57 && scene_get(BANK_D, 1)[DR_GP(1, GP_FLFO_DEPTH)] == -50);
-        check("... and saved as 44, D too", project_save() == 0 && ((const project_t *)store[OBJ_PROJ])->format == 44u &&
-                                              ((const bank8_t *)store[BANKX_OBJ[0]])->format == 44u);
+        check("... and saved as 45, D too", project_save() == 0 && ((const project_t *)store[OBJ_PROJ])->format == 45u &&
+                                              ((const bank8_t *)store[BANKX_OBJ[0]])->format == 45u);
     }
     {   /* 0.3's eight banks (Evan, 2026-11-07): D, E, F yours, keys 1-8, an object each; the Presets' second bank
          * P9-P16 on keys 1-8, fixed; a new FM-1's C and F empty (nothing copied into them) */
@@ -821,6 +821,24 @@ int main(void)
         check("a Niagara Drift project isn't read: the defaults", project_load() != 0 &&
               proj.par[DR_GP(0, GP_PITCH)] == dr_param_info(DR_GP(0, GP_PITCH))->def && !scene_has(0, 0));
         check("... nor its banks", !scene_has(1, 0));
+    }
+    {   /* 44: the live macros' slots held the gesture keys' old times; at rest now, the rest kept */
+        static project_t p44;
+        memset(store_n, 0, sizeof store_n);
+        project_defaults();
+        p44 = proj;
+        p44.format = 44u;
+        p44.par[P_DARK] = 30;
+        p44.par[P_SPACE] = 35;
+        p44.par[P_FEEDBACK] = 40;
+        memcpy(p44.scene[0], p44.par, sizeof p44.scene[0]);
+        p44.scene[0][P_MOTION] = 40;
+        p44.scene_used = 1;
+        memcpy(store[OBJ_PROJ], &p44, sizeof p44);
+        store_n[OBJ_PROJ] = (int)sizeof p44;
+        check("a 44 project loads: the live macros at rest, the sound kept", project_load() == 0 &&
+              proj.par[P_DARK] == 0 && proj.par[P_SPACE] == 0 && proj.par[P_FEEDBACK] == 40 &&
+              scene_has(0, 0) && scene_get(0, 0)[P_MOTION] == 0);
     }
     printf("project: %s\n", fails ? "FAILED" : "all ok");
     return fails != 0;

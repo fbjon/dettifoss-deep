@@ -15,6 +15,8 @@
  *   master N                     MASTER pot 0..4096
  *   midi B0 B1 B2                incoming USB MIDI message (hex bytes)
  *   wav FILE | wavstop           start / stop recording the output
+ *   chord G MAIN IV              drone G's chord notes: its main (MIDI x 100), its partner's interval (cents, "-" off)
+ *   chordgo ON SNAP              both drones to their chord notes (1) or back to the sound (0), as Snap 0..100 says
  *   peakreset                    restart the output peak (expect peak_db_min / peak_db_max)
  *   shot FILE.png                save the screen
  *   leds                         print the lit buttons and keys
@@ -681,6 +683,13 @@ int main(int argc, char **argv)
                 }
                 dr_set(p, v);
             }
+            run_ms(1);
+        } else if (!strcmp(cmd, "chord")) {         /* chord G MAIN IV: drone G's main note (MIDI x 100) and its partner's
+                                                    * interval (cents; "-": the partner off), for the next chordgo */
+            dr_chord(atoi(a), atoi(b), strcmp(c, "-") ? atoi(c) : 0, strcmp(c, "-") != 0);
+            run_ms(1);
+        } else if (!strcmp(cmd, "chordgo")) {       /* chordgo ON SNAP: to the chord (1) or back to the sound (0) */
+            dr_chord_go(atoi(a), atoi(b));
             run_ms(1);
         } else if (!strcmp(cmd, "savecut")) {      /* savecut 1: a save cuts an audio block, as on the FM-1 */
             save_cut = atoi(a);

@@ -48,9 +48,10 @@
 /* ------------------------------------------------------------- pages --- */
 /* the pages (2026-10-10, from the review: what's played together sits together, no half-empty pages) */
 enum { V_PLAY, V_PLAY2, V_LIFE, V_TONE, V_OSC, V_SOURCE, V_LFO, V_LFO2, V_PARTNER, V_MOVES, V_SETUP, V_SETUP2,
-       V_PULSE, V_FX, V_FX2, NVIEWS };
+       V_PULSE, V_FX, V_FX2, V_LIVE, NVIEWS };
 static const char *const VIEW_NAME[NVIEWS] = {"Drones", "Pitch", "Life", "Tone", "Osc", "Sub · Drive", "LFO sends",
-                                              "Mods", "Partner", "Pitch moves", "Setup 1", "Setup 2", "Swell", "Space", "Details"};
+                                              "Mods", "Partner", "Pitch moves", "Setup 1", "Setup 2", "Swell", "Space", "Details",
+                                              "Live"};
 /* what each knob moves on each page: a drone's parameter (g 0 or 1, GP_*), a global one (g G, P_*), or
  * nothing (g NONE) */
 #define G 2
@@ -80,6 +81,7 @@ static const knob_t VIEW_KNOB[NVIEWS][4] = {
      * SEL the delay's type over Time and what goes into the reverb over Type (sel_job) */
     {{G, P_DLY_REPEATS}, {G, P_DLY_MIX}, {G, P_REV_LEN}, {G, P_REV_MIX}},
     {{G, P_DLY_DRIVE}, {G, P_DLY_TIME}, {G, P_REV_DAMP}, {G, P_REV_TYPE}},
+    {{G, P_DARK}, {G, P_THICK}, {G, P_MOTION}, {G, P_SPACE}},   /* LIVE (SEL + HOME, live.c): the live macros */
 };
 /* A KNOB's SECOND JOB with SEL held, on the pages that have one (its card shows both, the second "+ SEL"): the
  * choices set before playing, so a player who never finds them loses nothing. FX's KNOB 4: the delay's type, what goes
@@ -220,6 +222,12 @@ static struct {
     uint32_t splash_t0;                /* the start's animation: since */
     uint8_t splash_done;
 } ui;
+static void live_keys(uint32_t keys, uint32_t ch);   /* the Live page (live.c) */
+static void live_toggle(void);
+static void live_oct(int up);
+static void live_snap(int32_t e);
+static void live_run(void);
+static int live_led(int k);
 
 /* a message: a banner across the top of the picture for a moment (the knobs keep the bottom) */
 static void say_c(const char *a, const char *b, uint16_t col);
@@ -1901,7 +1909,10 @@ static void input(void)
         uint32_t m = 1u << i;
         if (!(ch & m))
             continue;
-        if (page_btn((int)i) >= 0) {                   /* page buttons: on the press and the release */
+        if (i == B_HOME && (btn & m) && (btn >> B_SEL & 1u)) {   /* SEL + HOME: the Live page, or back */
+            ui.btn_used |= 1u << B_SEL | m;
+            live_toggle();
+        } else if (page_btn((int)i) >= 0) {            /* page buttons: on the press and the release */
             if (btn & m)
                 page_down((int)i);
             else
@@ -1913,7 +1924,10 @@ static void input(void)
                 ui.btn_used |= m;
                 if (back)
                     ui.btn_used |= 1u << B_SEL;
-                wave_step(i == B_OCTUP, back ? -1 : 1);
+                if (ui.view == V_LIVE)                 /* the Live page: the chords' octave */
+                    live_oct(i == B_OCTUP);
+                else
+                    wave_step(i == B_OCTUP, back ? -1 : 1);
             }
             if (i == B_PLAY && (btn >> B_SEL & 1u)) {  /* SEL + PLAY: drone II alone, out / in */
                 ui.btn_used |= 1u << B_SEL;
@@ -1941,7 +1955,9 @@ static void input(void)
     }
     ch = keys ^ ui.keys;                               /* the black keys: switches, on the press */
     ui.keys = keys;
-    for (i = 0; i < 11u; i++) {
+    if (ui.view == V_LIVE)                             /* the Live page: chords on the keys, nothing else */
+        live_keys(keys, ch);
+    for (i = 0; i < 11u && ui.view != V_LIVE; i++) {
         sw_t w = sw_layer()[i];
         if (ui.btn >> B_SEL & 1u) {                   /* SEL held: a key touched names itself on the map, and
                                                         * stays as it is (Evan, 2026-10-19) */
@@ -1988,7 +2004,7 @@ static void input(void)
             save_dn = 0;
         }
     }
-    for (i = 0; i < NPLAY; i++) {                      /* the white keys 1-8: scenes (SAVE held: store) */
+    for (i = 0; i < NPLAY && ui.view != V_LIVE; i++) {   /* the white keys 1-8: scenes (SAVE held: store) */
         if ((ch & keys) >> WHITE_K[i] & 1u) {
             if (btn >> B_SAVE & 1u) {
                 ui.btn_used |= 1u << B_SAVE;           /* SAVE let go: not a plain save */
@@ -2012,7 +2028,7 @@ static void input(void)
                 scene_back();
         }
     }
-    for (i = NPLAY; i < NWHITE; i++) {                 /* the eight gesture keys, G4 .. G5 */
+    for (i = NPLAY; i < NWHITE && ui.view != V_LIVE; i++) {   /* the eight gesture keys, G4 .. G5 */
         const int g = i < NSCENES ? G_PRESS + (int)(i - NPLAY) : (int)(i - NSCENES);   /* keys 9-12: the pressure
                                                                                           * gestures (v0.3) */
         if (!((ch & keys) >> WHITE_K[i] & 1u))
@@ -2036,7 +2052,7 @@ static void input(void)
             gesture_down(g);                           /* the gestures (v0.2, v0.3) */
         }
     }
-    for (i = NPLAY; i < NWHITE; i++)                 /* ... and let go (one that picked a bank: nothing) */
+    for (i = NPLAY; i < NWHITE && ui.view != V_LIVE; i++)   /* ... and let go (one that picked a bank: nothing) */
         if ((ch & ~keys) >> WHITE_K[i] & 1u)
             gesture_up(i < NSCENES ? G_PRESS + (int)(i - NPLAY) : (int)(i - NSCENES));
     if (btn || keys || ch)
@@ -2049,8 +2065,11 @@ static void input(void)
 #endif
     if ((e = plat_enc(EN_SELECT)) != 0)              /* SELECT: the LFO rate */
         global_turn(EN_SELECT, dr_ext_spb > 0.0f ? P_LFO_DIV : P_LFO_RATE, dr_ext_spb > 0.0f ? "LFO CYCLE" : "LFO RATE", e);
-    if ((e = plat_enc(EN_ALGO)) != 0)                /* ALGORITHM: the Movement, every LFO depth 0 .. 200 % */
+    if ((e = plat_enc(EN_ALGO)) != 0 && ui.view == V_LIVE)   /* ALGORITHM: on the Live page Snap; */
+        live_snap(e);
+    else if (e)                                      /* else the Movement, every LFO depth 0 .. 200 % */
         global_turn(EN_ALGO, P_MOVE, "MOVEMENT", e);
+    live_run();
     if ((e = plat_enc(EN_PRESET)) != 0)              /* PRESETS: Gesture time, every gesture's speed */
         mtime_turn(e);
     for (i = 0; i < 4; i++)
@@ -2127,6 +2146,8 @@ static const char *card_name(int p)
     case P_REV_TYPE: return "Type";
     case P_DLY_ROUTE: return "Into rev";       /* what goes into the reverb */
     case P_SCENE_BARS: return "Scene";         /* the Scene time in bars (on a clock) */
+    case P_DARK: return "Dark";                /* Dark-Bright */
+    case P_THICK: return "Thick";              /* Thickness */
     default: break;
     }
     if (p < P_XMOD && p % GP_N == GP_OLFO_DEPTH)  /* LFO sends: named for what they move */
@@ -2431,6 +2452,9 @@ static void leds(void)
                                                         * the banks, the one playing lit (as the map draws them) */
         for (i = 0; i < 8u; i++)
             k[WHITE_K[NPLAY + i]] = proj.bank == KEY_BANK[i] ? 255 : LED_DIM;
+    if (ui.view == V_LIVE)                             /* the Live page: its keys alone */
+        for (i = 0; i < NKEYS; i++)
+            k[i] = (uint8_t)live_led((int)i);
     boxed_blink(b, k);
     plat_leds(b, k);
 }
@@ -2600,6 +2624,7 @@ static void draw_splash(uint32_t t0)
 }
 
 #include "look.c"                             /* 0.3's new look: every page, the header, the key map */
+#include "live.c"                             /* the Live page: chords on the keys */
 
 /* ------------------------------------------------------ screen reader --- */
 /* The screen as text for a screen reader on the computer (announce.c, Charles Vestal's fm1-reader; issue #87): a page

@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the chord layer, C Am F G and back to the sound, at Snap 50 (a
+# 300 ms glide with a slight dip), 0 (4 s glides) and 100 (each change a new attack). Not a test of its own.
+notips
+tap PLAY
+wait 2500
+wav chords-snap50.wav
+chord 0 4800 700
+chord 1 6400 300
+chordgo 1 50
+wait 3000
+chord 0 4500 700
+chord 1 6000 400
+chordgo 1 50
+wait 3000
+chord 0 4100 1600
+chord 1 6000 -
+chordgo 1 50
+wait 3000
+chord 0 4300 700
+chord 1 6200 500
+chordgo 1 50
+wait 3000
+chordgo 0 50
+wait 3000
+wavstop
+wav chords-snap0.wav
+chord 0 4800 700
+chord 1 6400 300
+chordgo 1 0
+wait 6000
+chord 0 4500 700
+chord 1 6000 400
+chordgo 1 0
+wait 6000
+chordgo 0 0
+wait 6000
+wavstop
+wav chords-snap100.wav
+chord 0 4800 700
+chord 1 6400 300
+chordgo 1 100
+wait 2000
+chord 0 4500 700
+chord 1 6000 400
+chordgo 1 100
+wait 2000
+chord 0 4100 1600
+chord 1 6000 -
+chordgo 1 100
+wait 2000
+chordgo 0 100
+wait 3000
+wavstop

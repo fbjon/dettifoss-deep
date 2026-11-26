@@ -1934,6 +1934,152 @@ int main(void)
         check("Random: an init repeats the sequence; a seed (the first PLAY) makes a new one", same0 && !same1);
     }
 
+    {   /* the chord layer: each drone to its notes, as Snap says; back to the sound when let go */
+        float before, lo = 1.0f, p_mid, p_end;
+        int i;
+        dry_init();
+        dr_set(DR_GP(0, GP_PITCH), 3800);
+        dr_set(DR_GP(1, GP_PITCH), 5000);
+        dr_play(1);
+        run(secs(3.0f));
+        dr_chord(0, 4800, 700, 1);                  /* C: C3 and G3; E4 and G4 */
+        dr_chord(1, 6400, 300, 1);
+        run(1);
+        before = rms();
+        dr_chord_go(1, 100);
+        for (i = 0; i < 24; i++) {                  /* ~140 ms, a block at a time */
+            run(1);
+            lo = fminf(lo, rms());
+        }
+        check("chord, Snap 100: the level dips out (under -30 dB)", lo < before * 0.03f);
+        check("chord, Snap 100: then at once on the chord's notes", fabsf(dr_pitch[0] - 48.0f) < 0.01f &&
+              fabsf(dr_pitch[1] - 64.0f) < 0.01f);
+        run(secs(0.5f));
+        check("chord, Snap 100: back to its level after the dip", rms() > before * 0.7f);
+        dr_set(DR_GP(0, GP_PITCH), 3000);           /* the Pitch knob moves nothing under a chord */
+        run(secs(0.3f));
+        check("chord: the Pitch knob doesn't move a drone holding a chord", fabsf(dr_pitch[0] - 48.0f) < 0.01f);
+        run(secs(0.8f));
+        run(8);                                     /* (over a few cycles: a block is under one at C3) */
+        before = rms();
+        lo = 1.0f;
+        dr_chord(0, 4500, 700, 1);                  /* Am at Snap 50: 300 ms, a breath of a dip */
+        dr_chord(1, 6000, 400, 1);
+        dr_chord_go(1, 50);
+        for (i = 0; i < 4; i++) {
+            run(3);
+            lo = fminf(lo, rms());
+        }
+        run(secs(0.11f));
+        p_mid = dr_pitch[0];
+        run(secs(0.4f));
+        p_end = dr_pitch[0];
+        printf("  Snap 50: dip %.1f dB; pitch %.2f after ~0.18 s, %.2f after ~0.6 s\n", (double)(20.0f * log10f(lo / before)),
+               (double)p_mid, (double)p_end);
+        check("chord, Snap 50: a slight dip (0.5 .. 3 dB)", lo < before * 0.94f && lo > before * 0.7f);
+        check("chord, Snap 50: a glide (part way at 180 ms, there by 600)", p_mid < 47.5f && p_mid > 45.5f &&
+              fabsf(p_end - 45.0f) < 0.01f);
+        dr_chord(0, 4100, 1600, 1);                 /* F at Snap 0: a 4 s glide, no dip */
+        dr_chord(1, 6000, 0, 0);
+        dr_chord_go(1, 0);
+        run(secs(2.0f));
+        p_mid = dr_pitch[0];
+        run(secs(2.5f));
+        check("chord, Snap 0: a slow glide (part way at 2 s, there by 4.5)", p_mid < 44.0f && p_mid > 42.0f &&
+              fabsf(dr_pitch[0] - 41.0f) < 0.01f);
+        dr_chord_go(0, 50);                         /* let go: back to the sound's Pitch, as it is now */
+        run(secs(0.8f));
+        check("chord let go: back to the Pitch", fabsf(dr_pitch[0] - 30.0f) < 0.01f && fabsf(dr_pitch[1] - 50.0f) < 0.01f);
+        dr_play(0);
+        run(secs(4.0f));
+        dr_chord(0, 5200, 700, 1);                  /* stopped: there at once, ready for PLAY */
+        dr_chord_go(1, 30);
+        run(2);
+        check("chord, stopped: there at once", fabsf(dr_pitch[0] - 52.0f) < 0.01f);
+        dr_chord_go(0, 30);
+        run(2);
+    }
+
+    {   /* the live macros: offsets on the sound, 0 the sound as set; measured over a held chord */
+        static const int LP[4] = {P_DARK, P_THICK, P_MOTION, P_SPACE};
+        static const char *const LN[4] = {"Dark-Bright", "Thickness", "Motion", "Space"};
+        float db[4][3], zc[4][3];
+        int16_t was[DR_NPARAMS];
+        int m, k, i, same = 1, c0, c1;
+        dry_init();
+        dr_set(P_PULSE, 0);
+        dr_set(P_DRIFT, 0);
+        dr_play(1);
+        dr_chord(0, 4800, 700, 1);                  /* C3 G3, E4 B4 */
+        dr_chord(1, 6400, 700, 1);
+        dr_chord_go(1, 100);
+        run(secs(3.0f));
+        for (i = 0; i < DR_NPARAMS; i++)
+            was[i] = (int16_t)dr_heard(i);
+        c0 = was[DR_GP(0, GP_CUTOFF)];
+        c1 = was[DR_GP(1, GP_CUTOFF)];
+        for (m = 0; m < 4; m++)
+            for (k = 0; k < 3; k++) {
+                dr_set(LP[m], k * 100 - 100);
+                run(secs(1.5f));
+                run(secs(1.0f));
+                db[m][k] = 20.0f * log10f(rms());
+                zc[m][k] = (float)upcross / (float)frames * DR_SR;
+                if (k == 1)
+                    for (i = 0; i < DR_NPARAMS; i++)
+                        same &= dr_heard(i) == was[i] || i == LP[m];
+                if (k == 2)
+                    dr_set(LP[m], 0);
+            }
+        for (m = 0; m < 4; m++)
+            printf("  %-11s -100 / 0 / 100: %5.1f %5.1f %5.1f dB, %4.0f %4.0f %4.0f crossings a second\n", LN[m],
+                   (double)db[m][0], (double)db[m][1], (double)db[m][2], (double)zc[m][0], (double)zc[m][1], (double)zc[m][2]);
+        check("live macros at 0: the sound as set", same);
+        dr_set(P_DARK, 100);
+        run(2);
+        check("Dark-Bright 100: the cutoffs 250 up", dr_heard(DR_GP(0, GP_CUTOFF)) == c0 + 250);
+        run(secs(0.5f));
+        k = (int)upcross;
+        dr_set(P_DARK, -100);
+        run(2);
+        check("Dark-Bright -100: the cutoffs 250 down", dr_heard(DR_GP(1, GP_CUTOFF)) == c1 - 250);
+        run(secs(0.5f));
+        check("Dark-Bright: brighter up than down (more zero crossings)", (int)upcross < k);
+        dr_set(P_DARK, 0);
+        dr_set(DR_GP(0, GP_PARTNER), 0);
+        dr_chord_go(0, 100);
+        dr_set(P_THICK, 100);
+        run(secs(0.5f));
+        check("Thickness 100: the partners on, beating", dr_heard(DR_GP(0, GP_PARTNER)) == 1 && dr_heard(DR_GP(1, GP_DETUNE)) >= 60);
+        dr_set(P_THICK, -100);
+        run(secs(3.0f));                            /* (the meter's own fall) */
+        check("Thickness -100: drone II gone, the bass alone", dr_level[1] < 0.001f && dr_level[0] > 0.01f);
+        dr_set(P_THICK, 0);
+        dr_set(DR_GP(0, GP_PARTNER), 1);
+        dr_set(P_MOTION, -100);
+        run(2);
+        check("Motion -100: still (Movement, Drift 0)", dr_heard(P_MOVE) == 0 && dr_heard(P_DRIFT) == 0);
+        dr_set(P_MOTION, 100);
+        run(2);
+        check("Motion 100: Movement to the top", dr_heard(P_MOVE) == 100 && dr_heard(P_DRIFT) == 70);
+        dr_set(P_MOTION, 0);
+        dr_set(P_SPACE, -100);
+        run(2);
+        check("Space -100: dry", dr_heard(P_REV_MIX) == 0 && dr_heard(P_DLY_MIX) == 0);
+        dr_set(P_SPACE, 100);
+        run(2);
+        check("Space 100: the reverb open", dr_heard(P_REV_MIX) == 65 && dr_heard(P_REV_LEN) == 85);
+        dr_set(P_REV_MIX, 90);                      /* a value turned under a macro: the macro moves from it */
+        run(2);
+        check("Space 100, Rev mix turned past its aim: as turned", dr_heard(P_REV_MIX) == 90);
+        dr_set(P_SPACE, 0);
+        dr_set(P_REV_MIX, 0);
+        run(2);
+        check("Space back to 0: the sound as set", dr_heard(P_REV_MIX) == 0 && dr_heard(P_REV_LEN) == dr_param_info(P_REV_LEN)->def);
+        dr_play(0);
+        run(secs(4.0f));
+    }
+
     check("output finite throughout", finite_ok);
     printf(bad ? "drone: %d FAILED\n" : "drone: all ok\n", bad);
     return bad ? 1 : 0;
