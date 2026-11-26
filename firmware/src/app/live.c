@@ -22,9 +22,12 @@
  * above free for a lead (not yet):
  *
  *   F3 / F#3       the next / the previous chord, both always lit, taking turns at full each 0.5 s. Two ways
- *                  (SEL + F3): REST: a tap steps; held, the chord is released, and letting go brings in the next (air between).
+ *                  (SEL + F3): REST: a tap steps; held, the chord is released, and letting go brings in the next
+ *                  (air between).
  *                  HOLD: held, the chord plays; let go, it's released, and the next hold brings in the next.
  *                  While a chord rests the drones move to the next one's notes, so it comes in on them
+ *   G5             BASS: the bass sounding held under the chords that follow, through rests too (lit), till tapped
+ *                  again
  *   OCT, the knobs, ALGORITHM   as on the Live page
  *
  * SEL + HOME, on either, opens Niagara Drift's Drones and Pitch pages (again: the other), till the sound has its own.
@@ -59,7 +62,9 @@ static struct {
     int8_t step;                               /* the step sounding (or last sounded), -1 none yet */
     int8_t to;                                 /* the step a held key goes to, -1 none */
     uint8_t rest;                              /* the chord released */
-} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0};
+    int8_t pbass;                              /* ... a bass held under it (a root key), -1 none */
+    int16_t pnote;                             /* ... its note, MIDI, at no octave shift: it stays put */
+} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0};
 
 static char *lv_end(char *t)
 {
@@ -99,6 +104,8 @@ static void lv_notes(void)                     /* the chord's notes to the drone
     int b = lv.bass >= 0 ? LV_LOW + lv.bass + 12 * lv.oct : lo;
     if (b > lo)                                /* a bass set apart goes under the chord */
         b -= 12;
+    if (lv.prog && lv.pbass >= 0)              /* the progression's held bass: where it was */
+        b = lv.pnote + 12 * lv.oct;
     lv.note[0] = (int16_t)b;
     lv.note[1] = (int16_t)(lo + 7);
     lv.note[2] = (int16_t)(lo + 12 + lv_third(lv.smods) + up);
@@ -117,7 +124,7 @@ static void pg_load(int i)                     /* step i as the chord (its notes
 {
     lv.root = PG_DEMO[i].root;
     lv.smods = PG_DEMO[i].mods;
-    lv.bass = -1;
+    lv.bass = lv.pbass;
     lv_notes();
 }
 static int pg_after(int dir) { return lv.step < 0 ? 0 : (lv.step + dir + PG_N) % PG_N; }
@@ -142,12 +149,23 @@ static void pg_rest(int next)                  /* released, the drones moving to
         lv.note[i] = was[i];
     lv.root = PG_DEMO[lv.step].root;
     lv.smods = PG_DEMO[lv.step].mods;
-    dr_chord_rest(lv.snap);
+    dr_chord_rest(lv.snap, lv.pbass >= 0);     /* (a held bass sounds on through it) */
     lv.rest = 1;
 }
 static void pg_keys(uint32_t keys, uint32_t ch)
 {
     int k;
+    if ((ch & keys) >> LV_BASS_K & 1u) {       /* G5: the bass sounding held under the next chords, or let go */
+        if (lv.pbass >= 0) {
+            const int was = lv.bass;
+            lv.pbass = lv.bass = -1;
+            if (lv.root >= 0 && !lv.rest && was >= 0 && was != lv.root)
+                lv_send();                     /* (under a chord of another root: back on its own) */
+        } else if (lv.root >= 0) {
+            lv.pbass = lv.bass = lv.bass >= 0 ? lv.bass : lv.root;   /* (sounding already: nothing to send) */
+            lv.pnote = (int16_t)(lv.note[0] - 12 * lv.oct);
+        }
+    }
     for (k = PG_NEXT; k <= PG_PREV; k++) {
         const int dir = k == PG_NEXT ? 1 : -1;
         if (!(ch >> k & 1u))
@@ -280,7 +298,8 @@ static int live_led(int k)                     /* a key's light on the page, 0..
 {
     int m;
     if (lv.prog)                               /* the progression: next and previous, taking turns at full */
-        return k > PG_PREV ? 0 : (int)(plat_ms() / 500u & 1u) == k ? 255 : 96;
+        return k == LV_BASS_K ? (lv.pbass >= 0 ? 255 : 0)
+                              : k > PG_PREV ? 0 : (int)(plat_ms() / 500u & 1u) == k ? 255 : 96;
     if (k < LV_NROOT)
         return k == lv.root ? 255 : k == lv.bass ? LED_DIM : 0;
     for (m = 0; m < LM_N; m++)
