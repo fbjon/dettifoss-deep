@@ -84,10 +84,15 @@ static int32_t lk_ktext(int32_t x, int32_t y, const felucca_font_t *f, const cha
 static int32_t lk_ktext_w(const felucca_font_t *f, const char *s);
 
 /* ------------------------------------------------------------ header --- */
+static int live_prog(void);                   /* live.c: the Live page shows the progression */
 /* a page's name in capitals, its number dropped when the header shows its "1/2" ("Setup 1": SETUP) */
 static void lk_page_name(int v, char *name)
 {
     int i, b;
+    if (v == V_LIVE && live_prog()) {
+        scopy(name, "PROGRESSION");
+        return;
+    }
     for (i = 0; VIEW_NAME[v][i] && i < 19; i++) {
         char c = VIEW_NAME[v][i];
         name[i] = (char)(c >= 'a' && c <= 'z' ? c - 32 : c);
@@ -236,6 +241,7 @@ static void lk_bar(void)
     h = hash(hash(h, (uint32_t)(gest + 1) | (uint32_t)ui.hold_from << 8 |
                          (uint32_t)(line < 0.0f ? 0xFFFu : (uint32_t)(line * 224.0f)) << 12),
              (uint32_t)(gest_pct + 1));
+    h = hash(h, (uint32_t)live_prog());        /* (the Live page's name: PROGRESSION) */
     if (h == ui.sig[0])
         return;
     ui.sig[0] = h;
