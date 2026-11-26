@@ -808,6 +808,8 @@ typedef struct {
     uint8_t g, on;                               /* which drone's filter it sounds through */
 } xv_t;
 static xv_t xv[XV_N];
+static uint8_t xv_n[DR_NGROUPS];                 /* how many sound through each drone */
+static float xbr[CR];                            /* their sound, a tick of it (bridge_tick) */
 static const uint8_t CHORD_V[5][4] = {{1, 1, 2, 1}, {1, 1, 2, 2}, {0, 1, 1, 2}, {2, 1, 1, 2}, {3, 1, 1, 2}};
 static int chord_vi;
 /* A scale's note on the Tuning (Evan, 2026-10-30): its interval over drone I, semitones; cur as on 12-tone, j its pure
@@ -994,6 +996,8 @@ void dr_init(void)
     dr_fade = 0.0f;
     for (i = 0; i < XV_N; i++)                   /* no chord change sounding */
         xv[i].on = 0;
+    for (g = 0; g < DR_NGROUPS; g++)
+        xv_n[g] = 0;
     ch_bp = 0;
     ch_pa = ch_pa0 = 1.0f;
     ch_pr = 0.0f;
@@ -1587,7 +1591,10 @@ static void xv_take(int g, float note, float amp, float rel)
         if (xv[i].amp * xv[i].e < xv[q].amp * xv[q].e)
             q = i;
     }
+    if (xv[q].on)
+        xv_n[xv[q].g]--;
     xv[q].on = amp > 0.0f;
+    xv_n[g] += xv[q].on;
     xv[q].g = (uint8_t)g;
     xv[q].note = note;
     xv[q].amp = amp;
@@ -2167,6 +2174,38 @@ static inline float route_at(const grp_t *v, int i, uint32_t t)
     return v->rw[i] >= 1.0f ? b : lfo_at(v->rp[i], t) + (b - lfo_at(v->rp[i], t)) * v->rw[i];
 }
 
+/* the bridge voices sounding through drone g, a tick (m samples) into xbr: its wave, the pitch's shift (Tune, the
+ * LFO, a macro's) as the drone's own; each releasing (its level squared, so the end is soft) */
+static void bridge_tick(int g, int wi, float wf, float pw, float shift, uint32_t m)
+{
+    uint32_t j;
+    int i;
+    for (j = 0; j < m; j++)
+        xbr[j] = 0.0f;
+    for (i = 0; i < XV_N; i++) {
+        xv_t *b = &xv[i];
+        float inc, a, da, ph;
+        if (!b->on || b->g != g)
+            continue;
+        inc = note_inc(b->note + shift);
+        a = b->amp * b->e * b->e;
+        b->e = fm_maxf(b->e - b->de, 0.0f);
+        da = (b->amp * b->e * b->e - a) * (1.0f / (float)CR);
+        ph = b->ph;
+        for (j = 0; j < m; j++) {
+            xbr[j] += a * xosc(wi, wf, ph, inc, pw);
+            ph = advance(ph, inc);
+            a += da;
+        }
+        b->ph = ph;
+        if (b->e <= 0.0f) {
+            b->on = 0;
+            xv_n[g]--;
+        }
+    }
+}
+DR_FAR_FN(void, bridge_tick, (int, int, float, float, float, uint32_t))
+
 static DR_RAM_CODE void render_group(int g, uint32_t n)
 {
     grp_t *v = &grp[g];
@@ -2316,8 +2355,7 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
     }
     const float inv_n = 1.0f / (float)(n ? n : 1u);
     for (j0 = 0; j0 < n; j0 += CR) {
-        float xin[XV_N], xa[XV_N];               /* the bridge voices sounding through this drone: a tick's step, level */
-        int xi[XV_N], xn = 0;
+        int xb = 0;                              /* bridge voices sounding through this drone this tick (xbr) */
         float cu, mg;                            /* a pad change's attack: the upper notes', the bass's */
         float inc, pinc, sinc, lk, ilk, mlk, plk, slk, gc, a1, a2, a3, gstep, gend, lend, lstep, lv = v->lv, ph = v->ph, pph = v->pph,
               sph = v->sph, om, fmod, fl, pmod, xw, wf, og, sg, xd, xpd, xh = v->xh, xc = v->xc, wl, wb, wh, sy, r, fbn, fsn;
@@ -2437,16 +2475,10 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
                         chr * (CHR_JIT * v->jit + mm));
         cu = ch_pa0 + (ch_pa - ch_pa0) * ((float)j0 * inv_n);
         mg = g ? cu : fm_minf(cu * ch_pat * 25.0f, 1.0f);   /* (the bass in over 40 ms, as the old one goes) */
-        for (i = 0; i < XV_N; i++)
-            if (xv[i].on && xv[i].g == g) {
-                xv_t *b = &xv[i];
-                xi[xn] = i;
-                xin[xn] = note_inc(b->note + tune + pmod + mac_p[g]);
-                xa[xn++] = b->amp * b->e * b->e;
-                b->e -= b->de;
-                if (b->e <= 0.0f)
-                    b->on = 0;
-            }
+        if (xv_n[g]) {                           /* (in the flash: the RAM has no room, and it's rarely on) */
+            DR_FAR(bridge_tick)(g, wi, wf, pw, tune + pmod + mac_p[g], je - j0);
+            xb = 1;
+        }
         const int tick = tick_d[g] > 0.0f || tick_u[g] > 0.0f;
         float sd = v->sdiv;
         if (tick) {                              /* TICK (v0.3), log2: from the sub as heard down to -7, then up by 4 */
@@ -2559,11 +2591,8 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
                 x = (x * mlk * mg + v->pe * v->ig * plk * cu * xosc(wi, wf, pph, cp, pw)) * og;
             else
                 x *= og * mlk * mg;
-            for (i = 0; i < xn; i++) {          /* the bridge voices: a change's old notes, releasing */
-                float *bp = &xv[xi[i]].ph;
-                x += xa[i] * xosc(wi, wf, *bp, xin[i], pw);
-                *bp = advance(*bp, xin[i]);
-            }
+            if (xb)                             /* the bridge voices: a change's old notes, releasing */
+                x += xbr[j - j0];
             if (sg > 0.0f)
                 x += sg * slk * sub_wave(sw, sph, cs);
             if (nmix > 0.0f) {                  /* NOISE, coloured, beside the oscillators */
