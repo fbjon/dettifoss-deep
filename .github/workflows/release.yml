@@ -5,7 +5,7 @@
 # Push a tag vX.Y (on main, after the release PR): it builds ./build.sh --release X.Y on Linux (JieLi's toolchain, the
 # AC79 SDK at AC79NN_SDK_V1.2.1_2023-12-13, as BUILDING.md), attests the package and makes the release of that tag;
 # then the release skill gives the release its title and notes and publishes the site from that same file.
-# Check a package: gh attestation verify niagara-drift-X.Y.fwsc --repo evanyerburgh/niagara-drift
+# Check a package: gh attestation verify dettifoss-deep-X.Y.fwsc --repo fbjon/dettifoss-deep
 #   --signer-workflow zvenson/fm1-build/.github/workflows/build.yml
 name: release
 on:
@@ -13,8 +13,7 @@ on:
     tags: ['v*']
 jobs:
   build:
-    # Off in this fork until it has its own name and package (the repository variable RELEASES set to "on"):
-    # a tag would otherwise publish a package named niagara-drift from here
+    # Off until the repository variable RELEASES is set to "on"
     if: vars.RELEASES == 'on'
     uses: zvenson/fm1-build/.github/workflows/build.yml@v1
     permissions:
@@ -23,4 +22,4 @@ jobs:
       attestations: write
     with:
       build: ./build.sh --release "${GITHUB_REF_NAME#v}"
-      packages: build/niagara-drift-*.fwsc
+      packages: build/dettifoss-deep-*.fwsc

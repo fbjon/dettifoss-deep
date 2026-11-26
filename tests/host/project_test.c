@@ -801,6 +801,27 @@ int main(void)
         project_save();
         check("a bank past the eight: A", project_load() == 0 && proj.bank == 0);
     }
+    {   /* Niagara Drift saves to the same sectors under its own magics: they are left alone */
+        static project_t nd;
+        static bank_t nb;
+        memset(store_n, 0, sizeof store_n);
+        project_defaults();
+        nd = proj;
+        nd.magic = 0x314E5244u;                /* "DRN1" */
+        nd.par[DR_GP(0, GP_PITCH)] = 4321;
+        nd.scene_used = 1;
+        memcpy(store[OBJ_PROJ], &nd, sizeof nd);
+        store_n[OBJ_PROJ] = (int)sizeof nd;
+        memset(&nb, 0, sizeof nb);
+        nb.magic = 0x314B4E42u;                /* "BNK1" */
+        nb.format = PROJ_FORMAT;
+        nb.used = 1;
+        memcpy(store[OBJ_BANKB], &nb, sizeof nb);
+        store_n[OBJ_BANKB] = (int)sizeof nb;
+        check("a Niagara Drift project isn't read: the defaults", project_load() != 0 &&
+              proj.par[DR_GP(0, GP_PITCH)] == dr_param_info(DR_GP(0, GP_PITCH))->def && !scene_has(0, 0));
+        check("... nor its banks", !scene_has(1, 0));
+    }
     printf("project: %s\n", fails ? "FAILED" : "all ok");
     return fails != 0;
 }

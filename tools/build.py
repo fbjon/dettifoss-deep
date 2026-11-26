@@ -396,8 +396,8 @@ def main():
         if not m:
             raise SystemExit(f"--release {a.release}: use X.Y[.Z][-suffix], up to two digits each")
         PRODUCT = "FM-1_8%02d%02d%02d" % (int(m[1]), int(m[2]), int(m[3] or 0))
-        VERSION = a.release.upper().replace("-", " ")   # "0.1-beta": the startup screen's "niagara-drift 0.1 beta"
-        name = f"niagara-drift-{a.release}.fwsc"
+        VERSION = a.release.upper().replace("-", " ")   # "0.1-beta": the startup screen's "dettifoss-deep 0.1 beta"
+        name = f"dettifoss-deep-{a.release}.fwsc"
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:

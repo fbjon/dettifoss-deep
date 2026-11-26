@@ -177,7 +177,7 @@ static void ota_commit(const uint8_t *parm)
 }
 
 #include "app/app.h"
-#define ANN_NAME "Niagara Drift " OM_VERSION
+#define ANN_NAME "Dettifoss Deep " OM_VERSION
 #include "ann_words.h"            /* the link to Niagara Drift's words file (tools/gen_words.py, from firmware/words.tsv) */
 #include "announce.c"             /* the screen as text for a screen reader (Charles Vestal's fm1-reader; fm1-base, MPL-2.0) */
 static int ann_wire_send(const uint8_t *p, uint32_t n)   /* never waits: no room (nobody reading), not sent */

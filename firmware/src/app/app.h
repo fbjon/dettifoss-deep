@@ -10,7 +10,7 @@
 #ifndef OM_VERSION                       /* a release build passes its own (tools/build.py --release) */
 #define OM_VERSION "DEV"
 #endif
-#define PROJ_MAGIC 0x314E5244u           /* "DRN1" */
+#define PROJ_MAGIC 0x31504444u           /* "DDP1": Niagara Drift's "DRN1" saves, in the same sectors, aren't read */
 #define PROJ_FORMAT 44u                  /* 44: the LFO's depth on X-Wave and the resonance, 100 their whole range
                                           * (43's read, converted to the same range);
                                           * 43: the LFO rate 0..152, every second from 100 s to 10 s (41's and 42's
@@ -92,7 +92,7 @@ typedef struct {                         /* banks D, E, F (v0.3): an object each
 } bank8_t;
 _Static_assert(sizeof(bank8_t) <= PLAT_STORE_MAX, "a bank must fit one flash object");
 #define MTIME_DEF 50                     /* Gesture time to start: the gestures' own swells */
-#define BANK_MAGIC 0x314B4E42u           /* "BNK1" */
+#define BANK_MAGIC 0x31424444u           /* "DDB1" (Niagara Drift's "BNK1" isn't read) */
 
 extern project_t proj;
 
