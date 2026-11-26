@@ -763,21 +763,29 @@ int main(int argc, char **argv)
             ui_remote(atoi(a));
         else if (!strcmp(cmd, "notips"))            /* every one-time tip seen (the manual's pictures) */
             memset(proj.seen, 0xFF, sizeof proj.seen);
-        else if (!strcmp(cmd, "classic")) {         /* the starting sound before 2026-10-17, for the scenarios made on
-                                                    * it (they test the controls, not the starting sound) */
-            static const int16_t OLD[][2] = {{DR_GP(0, GP_FLFO_DEPTH), 25}, {DR_GP(1, GP_FLFO_DEPTH), -25},
-                {DR_GP(0, GP_RESO), 350}, {DR_GP(1, GP_RESO), 350}, {P_LFO_RATE, 98}, {P_LFO_W2, 1},
-                {P_DLY_REPEATS, 35}, {P_DLY_MIX, 0}, {P_REV_MIX, 25}, {P_DLY_LFO_DEPTH, 0}, {P_PULSE, 0},
-                {P_PULSE_RATE, 45}, {P_PULSE_DEPTH, 48},
-                {P_GLIDE, 0}, {P_FADE, 25}, {P_MORPH, 21}, {P_SCENE_T, 48},   /* the times before 2026-11-07 */
-                {DR_GP(0, GP_CUTOFF), 700}, {DR_GP(1, GP_CUTOFF), 680}, {DR_GP(0, GP_LEVEL), 75},
-                {DR_GP(1, GP_LEVEL), 61}};   /* the cutoffs and levels before 2026-11-08 */
-            uint32_t i;
-            for (i = 0; i < sizeof OLD / sizeof OLD[0]; i++) {  /* only these (the engine's queue holds 64) */
-                proj.par[OLD[i][0]] = OLD[i][1];
-                dr_set(OLD[i][0], OLD[i][1]);
+        else if (!strcmp(cmd, "niagara") || !strcmp(cmd, "classic")) {   /* Niagara Drift's starting sound (the engine's
+                                                    * defaults; P6), for the scenarios made on it (they test the controls,
+                                                    * not the starting sound); "classic" goes on to its sound before
+                                                    * 2026-10-17 */
+            int p;
+            for (p = 0; p < DR_NPARAMS; p++)     /* the engine started again on them, as at boot: no glide from P1 */
+                proj.par[p] = dr_param_info(p)->def;
+            dr_init();
+            if (!strcmp(cmd, "classic")) {
+                static const int16_t OLD[][2] = {{DR_GP(0, GP_FLFO_DEPTH), 25}, {DR_GP(1, GP_FLFO_DEPTH), -25},
+                    {DR_GP(0, GP_RESO), 350}, {DR_GP(1, GP_RESO), 350}, {P_LFO_RATE, 98}, {P_LFO_W2, 1},
+                    {P_DLY_REPEATS, 35}, {P_DLY_MIX, 0}, {P_REV_MIX, 25}, {P_DLY_LFO_DEPTH, 0}, {P_PULSE, 0},
+                    {P_PULSE_RATE, 45}, {P_PULSE_DEPTH, 48},
+                    {P_GLIDE, 0}, {P_FADE, 25}, {P_MORPH, 21}, {P_SCENE_T, 48},   /* the times before 2026-11-07 */
+                    {DR_GP(0, GP_CUTOFF), 700}, {DR_GP(1, GP_CUTOFF), 680}, {DR_GP(0, GP_LEVEL), 75},
+                    {DR_GP(1, GP_LEVEL), 61}};   /* the cutoffs and levels before 2026-11-08 */
+                uint32_t i;
+                for (i = 0; i < sizeof OLD / sizeof OLD[0]; i++) {  /* only these (the engine's queue holds 64) */
+                    proj.par[OLD[i][0]] = OLD[i][1];
+                    dr_set(OLD[i][0], OLD[i][1]);
+                }
+                run_ms(50);
             }
-            run_ms(50);
         } else if (!strcmp(cmd, "reboot")) {
             memset(&proj, 0, sizeof proj);
             boot();

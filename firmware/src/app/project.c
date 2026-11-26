@@ -33,8 +33,15 @@ static uint32_t proj_hash(void)
 #define II_(p) DR_GP(1, p)
 #define PRESET_N 100
 static const int16_t PRESET_CHANGES[][PRESET_N + 1] = {
-    /* P1 NIAGARA: the starting sound (0.2's P1, unchanged) */
-    {-1},
+    /* P1 DETTIFOSS: the starting sound, a soft pad for chords: Niagara's (P6) without its eerie side. No Swell (its
+     * breath had been most of the movement under a held chord), the filters breathing gently and less resonant (their
+     * sweeps through each note's harmonics whistled), sine subs and none under drone II (its square had put a low
+     * hum under the third), both waves a softer saw at one level, little delay wobble and Drift. Measured on a held
+     * Amaj7 against Niagara: the same loudness, half the movement (each third-octave band's spread over time, 2.2 dB
+     * against 5.5), 2 dB less over 3 kHz */
+    {P_PULSE, 0, I_(GP_FLFO_DEPTH), 35, II_(GP_FLFO_DEPTH), -35, I_(GP_RESO), 100, II_(GP_RESO), 100, P_SUBW_0, 1,
+     P_SUBW_1, 1, II_(GP_MIX), 0, I_(GP_WAVE), 60, II_(GP_WAVE), 60, I_(GP_LEVEL), 66, II_(GP_LEVEL), 66,
+     P_DLY_LFO_DEPTH, 5, P_DLY_MIX, 18, P_DRIFT, 15, P_LFO_W2, 1, -1},
     /* P2 EMBERS: triangles blooming toward saws and back, the two drones in turn, a pure-third partner each, a chorus
      * hall; Chord on major pentatonic (Evan, 2026-11-13: minor clashed with its F#); no Swell, the bloom its movement
      * (Evan, 2026-11-14: five Presets breathing with P1's Swell sounded too much the same) */
@@ -66,15 +73,8 @@ static const int16_t PRESET_CHANGES[][PRESET_N + 1] = {
      II_(GP_DRIVE), 60, II_(GP_LEVEL), 100, II_(GP_FLFO_DEPTH), -100, II_(GP_FLFO_DEST), 1, P_LFO_RATE, 61,
      P_DLY_TIME, 85, P_DLY_REPEATS, 45, P_DLY_MIX, 15, P_REV_MIX, 40, P_REV_TYPE, 1, P_FEEDBACK, 30, P_CHAR, 27,
      P_DLY_TYPE, 1, P_REV_LEN, 75, P_REV_DAMP, 80, P_PULSE_RATE, 0, P_PULSE_DEPTH, 60, P_PULSE_SHAPE, 0, -1},
-    /* P6 SEANCE: eerie: Eerie's hollow bass (D3, a fifth under it) under a high band-pass voice (A4 -19) on Harrison;
-     * cross-mod, long swinging echoes, a chorus hall; Wander at its slowest */
-    {I_(GP_WAVE), 20, I_(GP_INTERVAL), 1, I_(GP_DETUNE), 35, I_(GP_CUTOFF), 600, II_(GP_PITCH), 6881,
-     II_(GP_WAVE), 27, II_(GP_INTERVAL), 8, II_(GP_DETUNE), 8, II_(GP_MIX), 20, II_(GP_CUTOFF), 615,
-     II_(GP_RESO), 688, II_(GP_MODE), 1, II_(GP_DRIVE), 26, II_(GP_LEVEL), 62, II_(GP_OLFO_DEPTH), 10,
-     II_(GP_NOISE), 10, II_(GP_NCOLOR), 18, P_XMOD, 1, P_LFO_RATE, 73, P_LFO_W1, 6, P_GLIDE, 37, P_PULSE, 0,
-     P_DLY_TIME, 111, P_DLY_REPEATS, 68, P_DLY_MIX, 33, P_REV_MIX, 56, P_REV_TYPE, 3, P_LFO_RMOD, 33,
-     P_LFO_RMOD_SRC, 1, P_MOVE, 66, P_WANDER, 1, P_WSCALE, 3, P_DLY_TYPE, 0, P_REV_LEN, 66, P_REV_DAMP, 39,
-     P_DLY_DRIVE, 7, P_TUNING, 8, -1},
+    /* P6 NIAGARA: Niagara Drift's starting sound (0.2's P1, unchanged): the defaults */
+    {-1},
     /* P7 SONAR: drone I at 2.7 Hz: a click each cycle through the delay, drone II's resonant filter singing as it
      * sweeps */
     {I_(GP_PITCH), -1900, I_(GP_MIX), 0, I_(GP_CUTOFF), 900, I_(GP_LEVEL), 64, I_(GP_PARTNER), 0,
@@ -150,7 +150,7 @@ static const int16_t PRESET_CHANGES[][PRESET_N + 1] = {
      P_DLY_MIX, 0, P_REV_MIX, 0, P_DLY_LFO_DEPTH, 0, P_II_OUT, 1, P_MOVE, 0, -1},
 };
 #define NPRESETS ((int)(sizeof PRESET_CHANGES / sizeof PRESET_CHANGES[0]))
-static const char *const PRESET_NAME[] = {"NIAGARA", "EMBERS", "VESPERS", "DREAMHOUSE", "ABYSS", "SEANCE", "SONAR", "SIBYL",
+static const char *const PRESET_NAME[] = {"DETTIFOSS", "EMBERS", "VESPERS", "DREAMHOUSE", "ABYSS", "NIAGARA", "SONAR", "SIBYL",
                                           "HOWL", "CISTERN", "PISTON", "ASHRAM", "TELEGRAPH", "TAPE", "FALLING", "BARE"};
 _Static_assert(sizeof PRESET_NAME / sizeof PRESET_NAME[0] == NPRESETS, "a name for each Preset");
 const char *preset_name(int n)             /* a Preset's name */
@@ -254,8 +254,7 @@ void project_defaults(void)
     memset(&proj, 0, sizeof proj);
     proj.magic = PROJ_MAGIC;
     proj.format = PROJ_FORMAT;
-    for (i = 0; i < DR_NPARAMS; i++)
-        proj.par[i] = dr_param_info(i)->def;
+    changes_build(proj.par, PRESET_CHANGES[0], PRESET_N);   /* P1, the starting sound */
     proj.leds = 1;
     proj.mtime = MTIME_DEF;
     proj.seen[1] = SEEN1_MOVED;
