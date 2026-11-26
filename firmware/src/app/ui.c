@@ -3362,10 +3362,14 @@ static void speak_dump(void)
 #endif
 
 /* REMOTE (plat_fm1.c): while the emulator on a computer is played from this panel, the screen says so; after, every
- * band drawn afresh */
+ * band drawn afresh. A drone playing when the computer takes over stops, as with PLAY: the FM-1 comes back quiet */
 static uint8_t remote_on, remote_drawn;
 void ui_remote(int on)
 {
+    if (on && ui.playing) {
+        ui.playing = 0;
+        dr_play(0);
+    }
     if (!on && remote_on) {
         ui.sig[0] = ui.sig[1] = ui.sig[2] = 0;
         lcd_fill(0, 0, 240, 240, LK_BG);

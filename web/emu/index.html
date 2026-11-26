@@ -919,9 +919,9 @@ async function switchOn() {
 document.getElementById("go").addEventListener("click", switchOn);
 
 // ---------------------------------------------------------------- an FM-1 as the controller
-// An FM-1 on USB running this firmware plays this page: the page says HELLO (SysEx F0 7D 44 44 1 F7) every second, and
-// while it does the FM-1 rests and sends each change on its panel (16 PANEL: the buttons and keys held, MASTER's turn,
-// each knob's detents), and takes this page's lights (3 LIGHTS). Closing the page, or Stop, gives the FM-1 back
+// An FM-1 on USB running this firmware plays this page: the page sends its lights (SysEx F0 7D 44 44 3 .. F7) when they
+// change and at least twice a second, and while it does the FM-1 rests and sends each change on its panel (16 PANEL: the buttons and keys held, MASTER's turn,
+// each knob's detents), shows the lights, and answers HELLO (1) now and then. Closing the page, or Stop, gives the FM-1 back
 // (firmware/src/app/plat_fm1.c, REMOTE). Chrome and Edge have Web MIDI; it asks once for SysEx.
 const RM_H = [0xF0, 0x7D, 0x44, 0x44], rmBtn = document.getElementById("remote");
 let remote = null;
@@ -957,14 +957,10 @@ async function remoteStart() {
   catch (err) { status.textContent = "No MIDI here: the browser said no (" + (err && err.name || err) + ")"; return; }
   const outs = [...access.outputs.values()], ins = [...access.inputs.values()];
   const named = outs.filter((o) => /fm-1|felucca|composite|sinco|usb-midi|omni/i.test(o.name || ""));
-  remote = { access, cands: named.length ? named : outs, out: null, inp: null, lights: "" };
+  remote = { access, cands: named.length ? named : outs, out: null, inp: null, lights: new Array(41).fill(0), shown: "", sent: -1e9 };
   for (const i of ins) i.addEventListener("midimessage", remoteIn);
-  const hello = () => {
-    if (!remote) return;
-    for (const o of remote.out ? [remote.out] : remote.cands) remoteSend(o, 1);
-  };
-  hello();
-  remote.timer = setInterval(hello, 1000);
+  remoteSendLights();
+  remote.timer = setInterval(remoteSendLights, 250);   // the frames below send too, while timers lag on a busy page
   rmBtn.textContent = "Looking for the FM-1 · stop";
   status.textContent = outs.length ? "Looking for the FM-1 on USB" : "No MIDI ports: is the FM-1 plugged in?";
 }
@@ -980,12 +976,20 @@ function remoteStop() {
   rmBtn.classList.remove("on");
   status.textContent = node ? "On" : "Off";
 }
-function remoteLights(levels, keyLevels) {   // this page's lights on the FM-1, when they change
-  if (!remote || !remote.out || !levels || !keyLevels) return;
-  const b = [...levels, ...keyLevels].map((v) => v >> 1), key = b.join();
-  if (key === remote.lights) return;
-  remote.lights = key;
-  remoteSend(remote.out, 3, b);
+// The lights to the FM-1 when they change and at least twice a second, which keeps it playing this page; never two
+// sends within 20 ms, as the FM-1 drops a SysEx that comes before it has taken the last
+function remoteSendLights() {
+  if (!remote) return;
+  const now = performance.now(), key = remote.lights.join();
+  if (now - remote.sent < 20 || (key === remote.shown && now - remote.sent < 500)) return;
+  remote.sent = now;
+  remote.shown = key;
+  for (const o of remote.out ? [remote.out] : remote.cands) remoteSend(o, 3, remote.lights);
+}
+function remoteLights(levels, keyLevels) {   // from each frame of the emulator
+  if (!remote) return;
+  if (levels && keyLevels) remote.lights = [...levels, ...keyLevels].map((v) => v >> 1);
+  remoteSendLights();
 }
 rmBtn.addEventListener("click", () => remote ? remoteStop() : remoteStart());
 addEventListener("pagehide", remoteStop);

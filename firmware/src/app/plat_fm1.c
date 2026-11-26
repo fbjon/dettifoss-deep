@@ -36,19 +36,20 @@ int32_t plat_enc(int role)
 static volatile uint32_t master_q12 = 2048, master_k10;   /* the level, and the pot's turn 0 .. 1023 */
 
 /* REMOTE: the panel played into the emulator on a computer (web/emu), for trying a build without flashing it.
- * The page asks over USB-MIDI and asks again every second; while it does, the FM-1's own sound and screen rest (the
- * UI sees no hand on the panel, MASTER at 0) and every change on the panel goes to the page, which sends back its
- * lights. Three seconds without hearing it, the FM-1 is itself again. SysEx F0 7D 44 44 cmd .. F7 ("DD"):
- *   page -> FM-1   1 HELLO          play the emulator from the panel (again every second)
- *                  2 BYE            stop
+ * The page sends its lights over USB-MIDI, when they change and at least twice a second; while it does, the FM-1's own
+ * sound and screen rest (the UI sees no hand on the panel, MASTER at 0), the keys and buttons show the page's lights,
+ * and every change on the panel goes to the page. Eight seconds without hearing it, the FM-1 is itself again. One kind
+ * of frame keeps it there because the FM-1 holds one SysEx at a time and drops what comes meanwhile: the page leaves a
+ * frame between its sends. SysEx F0 7D 44 44 cmd .. F7 ("DD"):
+ *   page -> FM-1   2 BYE            stop
  *                  3 LIGHTS l..     41 levels 0..127: the buttons (B_*), then the keys from F3
- *   FM-1 -> page   1 HELLO ver      the answer to each HELLO
+ *   FM-1 -> page   1 HELLO ver      the answer to the first LIGHTS, and again each second
  *                  16 PANEL         the buttons held (B_*, 2 x 7 bits), the keys (4 x 7 bits from F3), MASTER's
  *                                   turn (2 x 7 bits, 0 .. 1023), and each knob's detents since the last (EN_*, 64 + n) */
-#define RM_GONE_MS 3000u
+#define RM_GONE_MS 8000u
 static struct {
     uint8_t on, sent;
-    uint32_t heard, btn, keys, master, t;
+    uint32_t heard, said, btn, keys, master;
     int32_t enc[NE];
     uint8_t lb[NB], lk[NKEYS];
 } rm;
@@ -57,18 +58,19 @@ static int rm_frame(const uint8_t *p, uint32_t n)   /* a SysEx from the computer
     uint32_t i;
     if (n < 4u || p[0] != 0x7Du || p[1] != 0x44u || p[2] != 0x44u)
         return 0;
-    if (p[3] == 1u) {
+    if (p[3] == 2u && rm.on) {
+        rm.heard = fm1_ms - RM_GONE_MS - 1u;
+    } else if (p[3] == 3u && n >= 4u + NB + NKEYS) {
         static const uint8_t HI[] = {0xF0, 0x7D, 0x44, 0x44, 1, 1, 0xF7};
         if (!rm.on) {
             memset(&rm, 0, sizeof rm);
             rm.on = 1;
+            rm.said = fm1_ms - 1000u;
             ui_remote(1);
         }
         rm.heard = fm1_ms;
-        ann_wire_send(HI, sizeof HI);
-    } else if (p[3] == 2u && rm.on) {
-        rm.heard = fm1_ms - RM_GONE_MS - 1u;
-    } else if (p[3] == 3u && n >= 4u + NB + NKEYS) {
+        if (fm1_ms - rm.said >= 1000u && !ann_wire_send(HI, sizeof HI))
+            rm.said = fm1_ms;
         for (i = 0; i < NB; i++)
             rm.lb[i] = (uint8_t)(p[4 + i] * 2u + (p[4 + i] >> 6));
         for (i = 0; i < NKEYS; i++)
