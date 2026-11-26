@@ -70,11 +70,12 @@ static struct {
     uint16_t shape;                            /* Q: the right hand's shape, its tones over C (bit 0 C .. 11 B); 0
                                                 * none yet (a major triad) */
     uint32_t rkeys;                            /* R: the keys of the chord (latched) */
+    uint32_t rtap;                             /* ... those pressed again while others were held: a tap takes them out */
     uint8_t lh;                                /* Q: the left hand plays 0 the root and bass, 1 the bass (the root
                                                 * held), 2 the root (the bass held) */
     uint8_t croot;                             /* Q and R: the chord's root, a pitch class (C 0), for its name */
     char cname[16];                            /* ... its name */
-} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, ""};
+} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, ""};
 
 /* THE THREE WAYS TO PLAY CHORDS (SEL on the Live page goes round them):
  *   P  roots and modifiers, as above
@@ -84,7 +85,8 @@ static struct {
  *      the bass; OCT- lit, the bass alone (the chord's root held); OCT+ lit, the root alone (the bass held): a
  *      three-way switch, the lit one tapped again back to both. (No octave: Height places the chord)
  *   R  the whole keyboard: the keys held together are the chord, latched as Q's shape; the lowest the bass (an octave
- *      down, no higher than E3), the rest its tones. One key alone: its fifth and octave over it
+ *      down, no higher than E3), the rest its tones. One key alone: its fifth and octave over it. While a key is held,
+ *      a tap of a key in the chord takes it out (one held on while another is let go stays: the hand moved on)
  * In Q and R the tones aren't played where the keys are: up to three of them (the third and seventh kept first, the
  * root and fifth dropped first) are placed by a window: KNOB 1 HEIGHT its middle, KNOB 2 SPREAD how far apart the
  * three sit (0 close, around Height; 12 an octave from the lowest to the highest; 36 three octaves), each the nearest
@@ -390,6 +392,22 @@ static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
         return;
     }
     if (lv.mode == LV_R) {                     /* R: the keys held together the chord */
+        const uint32_t up = ch & ~keys & LV_ALL;
+        if (up) {                              /* let go: a tap of a key already in the chord takes it out, unless
+                                                * another key was let go while it was held (the hand moved on) */
+            const uint32_t out = up & lv.rtap & lv.rkeys;
+            lv.rtap &= ~up & ~(keys & LV_ALL);
+            if (out && lv.root >= 0) {
+                lv.rkeys &= ~out;
+                if (lv.rkeys) {
+                    lv.root = (int8_t)(lv_low(lv.rkeys) % 12);
+                    lv_send();
+                } else {
+                    lv.root = -1;
+                    dr_chord_go(0, lv.snap);
+                }
+            }
+        }
         if (!(dn & LV_ALL))
             return;
         if (ui.btn >> B_SEL & 1u) {            /* SEL + a key: the chord let go */
@@ -400,7 +418,16 @@ static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
             }
             return;
         }
-        lv.rkeys = ((keys ^ ch) & LV_ALL) ? lv.rkeys | (dn & LV_ALL) : dn & LV_ALL;
+        if ((keys ^ ch) & LV_ALL & ~up) {      /* other keys held: added, or one in the chord marked (a tap takes
+                                                * it out) */
+            lv.rtap |= dn & LV_ALL & lv.rkeys;
+            if (!(dn & LV_ALL & ~lv.rkeys))
+                return;
+            lv.rkeys |= dn & LV_ALL;
+        } else {                               /* the first after letting go of all: a new chord */
+            lv.rkeys = dn & LV_ALL;
+            lv.rtap = 0;
+        }
         lv.root = (int8_t)(lv_low(lv.rkeys) % 12);
         lv_send();
         return;
