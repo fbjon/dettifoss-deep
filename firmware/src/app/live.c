@@ -157,7 +157,7 @@ static void live_oct(int up)                   /* OCT- / OCT+ on the page: the r
 
 static void live_snap(int32_t e)               /* ALGORITHM on the page: Snap */
 {
-    int v = (int)lv.snap + (int)e * 2;
+    int v = (int)lv.snap + (int)e * 5;
     lv.snap = (uint8_t)(v < 0 ? 0 : v > 100 ? 100 : v);
     scopy(ui.glab[0], "SNAP");
     itoa_u(lv.snap, ui.glab[1]);

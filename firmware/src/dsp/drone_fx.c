@@ -357,14 +357,21 @@ static void rv_coefs(float ease)
     float rt = rv_rt60(par[P_REV_LEN]), fsec, e;
     int inf = rt <= 0.0f;
     uint32_t i;
+    const float cut = chord_cut();
+    float ge = ease;
     if (inf && fade_target <= 0.0f) {   /* stopped or stopping: a freeze lets go, over about twice the Fade */
         fsec = fm_maxf(2.0f * dr_time_s(P_FADE, par[P_FADE]), 1.5f);
         rt = fsec;
         inf = 0;
     }
+    if (cut > 0.0f && !inf) {            /* a chord change cutting the tail: down toward 0.2 s, without the glide (a
+                                          * freeze is held: it was asked for) */
+        rt = rt * (1.0f - cut) + 0.2f * cut;
+        ge = 1.0f;
+    }
     for (i = 0; i < 8u; i++) {           /* g = 10^(-3 L / (RT60 fs)) */
         float g = inf ? 0.99988f : fm_exp2f(-9.965784f * rv.cur[i] / (rt * RV_FS));
-        rv.g[i] += (g - rv.g[i]) * ease;
+        rv.g[i] += (g - rv.g[i]) * ge;
     }
     {
         float v = (float)par[P_REV_DAMP], k = v <= 0.0f || inf ? 1.0f
@@ -608,9 +615,10 @@ static DR_RAM_CODE void fx_run(float *l, float *r, uint32_t n)
     /* stopped or stopping, the repeats can't run away: they ring out (QA 2026-10-20: at 90+ the howl went on after
      * PLAY, with "PLAY to start" on the screen) */
     const float ms = DR_FAR(dly_ms_now)(),
-                fbg1 = fade_target <= 0.0f ? fm_minf(rep_g(pfs[P_DLY_REPEATS]), 0.85f) : rep_g(pfs[P_DLY_REPEATS]);
-    const float dm = pfs[P_DLY_MIX] * 0.01f, dry1e = fm_sqrtf(1.0f - dm), wet1e = fm_sqrtf(dm);
-    const float rm = pfs[P_REV_MIX] * 0.01f, dry2e = fm_sqrtf(1.0f - rm), wet2e = fm_sqrtf(rm);
+                cut = 1.0f - chord_cut(),       /* a chord change cutting the tails: the repeats and the wets dip */
+                fbg1 = (fade_target <= 0.0f ? fm_minf(rep_g(pfs[P_DLY_REPEATS]), 0.85f) : rep_g(pfs[P_DLY_REPEATS])) * cut;
+    const float dm = pfs[P_DLY_MIX] * 0.01f, dry1e = fm_sqrtf(1.0f - dm), wet1e = fm_sqrtf(dm) * cut;
+    const float rm = pfs[P_REV_MIX] * 0.01f, dry2e = fm_sqrtf(1.0f - rm), wet2e = fm_sqrtf(rm) * cut;
     const float dn = 1.0f / (float)(n ? n : 1u);
     float fbg = fx_g[0], dry1 = fx_g[1], wet1 = fx_g[2], dry2 = fx_g[3], wet2 = fx_g[4];
     const float dfb = (fbg1 - fbg) * dn, dd1 = (dry1e - dry1) * dn, dw1 = (wet1e - wet1) * dn;

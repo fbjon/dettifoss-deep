@@ -794,11 +794,15 @@ static float tick_d[DR_NGROUPS], tick_u[DR_NGROUPS];
 static float chord_t[DR_NGROUPS];
 static int chord_on[DR_NGROUPS];
 /* the chord layer: each drone's notes as sent (dr_chord: the main note, MIDI x 100; the partner's interval, cents;
- * the partner on), taken up together by dr_chord_go. A change dips the level (ch_a deep: 15 ms down, held a moment),
- * swaps at the bottom, then glides there over ch_ms while the level comes back (150 ms); ch_m the level now, 0..1 */
+ * the partner on), taken up together by dr_chord_go. A change is a pad's: the upper voices (drone I's partner, the
+ * fifth; drone II, the third and the top) release (ch_u deep, over ch_rel), the notes swap at the bottom, and they
+ * come back in on the new notes (over ch_att) while the bass glides there over ch_ms, dipping only ch_a. ch_e is
+ * where the release is (0 .. 1, and held at 1 a moment); ch_lv each drone's level and ch_pt its partner's, 0..1 */
 static int16_t chs_main[DR_NGROUPS], chs_iv[DR_NGROUPS];
 static uint8_t chs_pon[DR_NGROUPS], ch_on, ch_dir;   /* ch_dir: 1 going down, 2 coming back, 0 resting */
-static float ch_ms, ch_a, ch_e, ch_m = 1.0f;
+static float ch_ms, ch_a, ch_u, ch_e, ch_rel = 0.015f, ch_att = 0.15f, ch_k;   /* ch_k: how far the change cuts
+                                                                                   * the effects' tails (chord_cut) */
+static float ch_lv[DR_NGROUPS] = {1.0f, 1.0f}, ch_pt[DR_NGROUPS] = {1.0f, 1.0f};
 static const uint8_t CHORD_V[5][4] = {{1, 1, 2, 1}, {1, 1, 2, 2}, {0, 1, 1, 2}, {2, 1, 1, 2}, {3, 1, 1, 2}};
 static int chord_vi;
 /* A scale's note on the Tuning (Evan, 2026-10-30): its interval over drone I, semitones; cur as on 12-tone, j its pure
@@ -1432,6 +1436,15 @@ static void macro_apply(uint32_t n)              /* the offsets again, n samples
             for (k = 0; k < MV_N && (AGE_MV[k].d || AGE_MV[k].kind != MK_ADD); k++)
                 mv_add(&AGE_MV[k], age_l, off, on, pm, &flags);
     }
+    if (ch_on) {                                 /* UNDER A CHORD: the upper drone (the third and the top) voiced as
+                                                  * the bass's, its wave and level, and the filters' sweeps a third as
+                                                  * deep, so every chord tone is heard (Frej, 2026-11-26: the starting
+                                                  * sound's soft drone II and deep sweeps hid the third) */
+        off[DR_GP(1, GP_WAVE)] += (float)(base[DR_GP(0, GP_WAVE)] - base[DR_GP(1, GP_WAVE)]);
+        off[DR_GP(1, GP_LEVEL)] += (float)(base[DR_GP(0, GP_LEVEL)] - base[DR_GP(1, GP_LEVEL)]);
+        for (k = 0; k < DR_NGROUPS; k++)
+            off[DR_GP(k, GP_FLFO_DEPTH)] -= (float)base[DR_GP(k, GP_FLFO_DEPTH)] * (2.0f / 3.0f);
+    }
     dk_mk = base[P_DARK] < 0 ? fm_exp2f(AGE_MK * (1.0f / 6.0206f) * (float)base[P_DARK] * -0.01f) : 1.0f;
     for (m = 0; m < 4; m++) {                    /* THE LIVE MACROS: where each knob is */
         const int lv = base[P_DARK + m];
@@ -1488,9 +1501,15 @@ float dr_age_now(float *ph)
     return age_l;
 }
 
-/* the chord layer: what dr_chord_go's Snap (0..100) means. The glide: 4 s at 0, 300 ms at 50 (evenly in log time
- * between), none at 100 (in a straight line from 50). The dip: none at 0, 15 % at 50 (a breath, so a change is
- * heard landing), all the way at 100 (each change a new attack, as a pad's) */
+/* the chord layer: what dr_chord_go's Snap (0..100) means. The bass's glide: 4 s at 0, 300 ms at 50 (evenly in log
+ * time between), none at 100 (in a straight line from 50); its dip: none at 0, 15 % at 50 (a breath, so a change is
+ * heard landing), all the way at 100. The upper voices: at 0 they glide with the bass; from 40 up they release
+ * all the way and come back in on the new notes, never sliding (a glide of a whole stack is disorienting), in
+ * between part way, gliding the rest. Their release: 120 ms up to 50, then quicker to 15 ms at 100; their attack
+ * 350 ms up to 50, then 150 ms at 100 (Frej, 2026-11-26: a pad's change, not a drone's) */
+static float snap_up(int s) { return fm_minf((float)s * (1.0f / 40.0f), 1.0f); }
+static float snap_rel(int s) { return s <= 50 ? 0.12f : 0.12f - 0.105f * (float)(s - 50) * 0.02f; }
+static float snap_att(int s) { return s <= 50 ? 0.35f : 0.35f - 0.2f * (float)(s - 50) * 0.02f; }
 static float snap_ms(int s)
 {
     return s <= 50 ? 4000.0f * fm_exp2f(-3.7369656f * (float)s * 0.02f) : 300.0f * (float)(100 - s) * 0.02f;
@@ -1504,7 +1523,9 @@ static void chord_swap(void)                     /* the bottom of the dip: each 
     int g;
     for (g = 0; g < DR_NGROUPS; g++) {
         grp_t *v = &grp[g];
-        const float k = ch_ms > 0.0f ? (float)CR * 1000.0f / (ch_ms * DR_SR) : 0.0f;   /* a tick's share of the glide */
+        /* a tick's share of the glide: the bass's; an upper voice released all the way jumps (0: at once) */
+        const float kb = ch_ms > 0.0f ? (float)CR * 1000.0f / (ch_ms * DR_SR) : 0.0f, ku = ch_u >= 1.0f ? 0.0f : kb;
+        const float k = g ? ku : kb, kp = ku;
         const float to = ch_on ? (float)chs_main[g] * 0.01f : (float)par[DR_GP(g, GP_PITCH)] * 0.01f;
         if (!v->cia)                             /* from the interval it has now */
             v->civ = v->ovon ? v->ov : v->ivs;
@@ -1515,44 +1536,65 @@ static void chord_swap(void)                     /* the bottom of the dip: each 
             v->cp = to;
         v->civt = (float)chs_iv[g] * 0.01f;
         v->slide = k > 0.0f ? fm_maxf(fm_fabsf(to - v->st) * k, 1e-5f) : 0.0f;
-        v->civr = k > 0.0f ? fm_maxf(fm_fabsf(v->civt - v->civ) * k, 1e-5f) : 1e6f;
+        v->civr = kp > 0.0f ? fm_maxf(fm_fabsf(v->civt - v->civ) * kp, 1e-5f) : 1e6f;
         v->cpgs = (float)CR * 1000.0f / (fm_maxf(ch_ms, 20.0f) * DR_SR);
     }
 }
+static void chord_levels(void)
+{
+    const float e = fm_minf(ch_e, 1.0f);
+    ch_lv[0] = 1.0f - ch_a * e;                  /* the bass (and its partner with it) */
+    ch_pt[0] = 1.0f - ch_u * e;                  /* the fifth, on top of that */
+    ch_lv[1] = 1.0f - fm_maxf(ch_a, ch_u) * e;   /* the third and the top */
+}
+/* Snap over 50 cuts the reverb's and the delay's tails at a change too, all of them at 100: their wet dips with the
+ * release and the tails shorten, so the old chord doesn't ring on through the new one (rendered with the starting
+ * sound's long reverb, Snap 100 had measured no dip at all at the output, 25 dB dry) */
+static float snap_cut(int s) { return s <= 50 ? 0.0f : (float)(s - 50) * 0.02f; }
+static float chord_cut(void) { return ch_dir ? ch_k * fm_minf(ch_e, 1.0f) : 0.0f; }
 static void chord_go(int on, int snap)
 {
-    const float d = snap_dip(snap), now = ch_a * fm_minf(ch_e, 1.0f);   /* (a dip still coming back: on from where it is) */
+    const float d = snap_dip(snap), u = snap_up(snap), e = fm_minf(ch_e, 1.0f);   /* (a change still coming back: on
+                                                                                    * from where it is) */
+    const float now_a = ch_a * e, now_u = ch_u * e;
     ch_on = (uint8_t)on;
     ch_ms = snap_ms(snap);
-    if (d > 0.0f && fade > 0.0f) {               /* down first */
-        ch_a = fm_maxf(d, now);
-        ch_e = now / ch_a;
+    mac_dirty = 1;                               /* the voicing under a chord (macro_apply) */
+    if ((d > 0.0f || u > 0.0f) && fade > 0.0f) {   /* released first */
+        ch_a = fm_maxf(d, now_a);
+        ch_u = fm_maxf(u, now_u);
+        ch_e = fm_maxf(ch_a, ch_u) > 0.0f ? fm_maxf(now_a, now_u) / fm_maxf(ch_a, ch_u) : 0.0f;
+        ch_rel = snap_rel(snap);
+        ch_att = snap_att(snap);
+        ch_k = snap_cut(snap);
         ch_dir = 1;
-    } else {                                     /* no dip, or nothing heard: at once */
+    } else {                                     /* no release, or nothing heard: at once */
         chord_swap();
-        ch_a = now;
-        ch_e = now > 0.0f ? 1.0f : 0.0f;
-        ch_dir = now > 0.0f ? 2 : 0;
+        ch_a = now_a;
+        ch_u = now_u;
+        ch_e = now_a > 0.0f || now_u > 0.0f ? 1.0f : 0.0f;
+        ch_dir = ch_e > 0.0f ? 2 : 0;
     }
+    chord_levels();
 }
-static void chord_run(uint32_t n)                /* the dip, a block on */
+static void chord_run(uint32_t n)                /* the release and the attack, a block on */
 {
-    if (ch_dir == 1) {                           /* down, then held there 15 ms x its depth (the level's own 6 ms
-                                                  * smoothing gets there too, so a jump at the bottom isn't heard) */
-        ch_e += (float)n * (1.0f / (0.015f * DR_SR));
-        if (ch_e >= 1.0f + ch_a) {
+    if (ch_dir == 1) {                           /* down, then held there 15 ms (the level's own 6 ms smoothing gets
+                                                  * there too, so a jump at the bottom isn't heard) */
+        ch_e += (float)n * (1.0f / (ch_rel * DR_SR));
+        if (ch_e >= 1.0f + 0.015f / ch_rel) {
             ch_e = 1.0f;
             ch_dir = 2;
             chord_swap();
         }
     } else if (ch_dir == 2) {
-        ch_e -= (float)n * (1.0f / (0.15f * DR_SR));
+        ch_e -= (float)n * (1.0f / (ch_att * DR_SR));
         if (ch_e <= 0.0f) {
             ch_e = 0.0f;
             ch_dir = 0;
         }
     }
-    ch_m = 1.0f - ch_a * fm_minf(ch_e, 1.0f);
+    chord_levels();
 }
 
 static void drain(void)
@@ -2024,7 +2066,7 @@ static void morph_snap(int g)                    /* all of a drone's switches wh
     v->pg = (v->con ? v->cpon : p[GP_PARTNER] != 0) ? 1.0f : 0.0f;
     v->pm = th_pm[g];
     v->lm = th_gm[g];
-    v->pe = v->pg * v->pm;
+    v->pe = v->pg * v->pm * ch_pt[g];
     v->ovon = 0;
     v->cia = v->con;                             /* (a chord's interval where it's going) */
     v->civ = v->civt;
@@ -2059,7 +2101,7 @@ static void morph_tick(int g, float step)        /* one control tick of the swit
                    : toward(v->pg, p[GP_PARTNER] ? 1.0f : 0.0f, step);
     v->pm = toward(v->pm, th_pm[g], TH_STEP);
     v->lm = toward(v->lm, th_gm[g], TH_STEP);
-    v->pe = v->pg * v->pm;
+    v->pe = v->pg * v->pm * ch_pt[g];             /* (ch_pt: a chord change's release of the fifth) */
     v->nc = pfs[DR_GP(g, GP_NCOLOR)] * 0.01f;    /* the colour, a blend white .. pink, gliding as a knob does */
     if (v->ovon != chord_on[g] || (chord_on[g] && fm_fabsf(v->ov - chord_t[g]) > 1e-3f)) {
         v->ig -= 2.0f * step;                    /* a gesture's interval for the partner (CHORD, v0.3): down, swap, up */
@@ -2429,8 +2471,8 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
         bk = 0.5f * gc / (1.0f + 0.5f * gc);     /* the makeup's one-pole, an octave under the cutoff */
         gend = v->gtarget > gf ? fm_minf(gf + frate, v->gtarget) : fm_maxf(gf - frate, v->gtarget);
         gstep = (gend - gf) * (1.0f / (float)CR);
-        lend = lv + (lvl * ch_m * v->lm * fm_exp2f(dw * 0.4f * v->wn[2]) - lv) * 0.06f;   /* ~6 ms: a Level turn never
-                                                  * clicks (ch_m: a chord change's dip; lm: Thickness) */
+        lend = lv + (lvl * ch_lv[g] * v->lm * fm_exp2f(dw * 0.4f * v->wn[2]) - lv) * 0.06f;   /* ~6 ms: a Level turn
+                                                  * never clicks (ch_lv: a chord change's release; lm: Thickness) */
         lstep = (lend - lv) * (1.0f / (float)CR);
         for (j = j0; j < je; j++) {
             float ci = inc, cp = pinc, cs = sinc, x, y, v1, v2, v3, a;

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): chord changes on the Live page at Snap 0 (a slow glide), 50 (the
+# upper voices release and come back in, the bass glides) and 100 (at once, the reverb's and delay's tails cut).
+# Not a test of its own.
+notips
+tap PLAY
+wait 1500
+press SEL
+tap HOME
+release SEL
+wait 600
+wav chord-snap.wav
+turn ALGO -10
+tapkey 7
+wait 4000
+tapkey 13
+tapkey 4
+wait 4000
+turn ALGO 10
+tapkey 22
+tapkey 0
+wait 4000
+tapkey 20
+tapkey 2
+wait 4000
+turn ALGO 10
+tapkey 7
+wait 4000
+tapkey 13
+tapkey 4
+wait 4000
+wavstop
