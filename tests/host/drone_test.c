@@ -1957,6 +1957,32 @@ int main(void)
               fabsf(dr_pitch[1] - 64.0f) < 0.01f);
         run(secs(0.5f));
         check("chord, Snap 100: at its level", rms() > before * 0.7f);
+        {                                           /* Am/C at Snap 100: the bass C3 carries on, no dip (drone I alone,
+                                                     * no partner, no sub: the bass, a period at a time) */
+            static float x[8192];
+            float b0, lo_b = 10.0f;
+            dr_voice(1, 0);
+            dr_set(DR_GP(0, GP_MIX), 0);
+            dr_chord(0, 4800, 700, 0);
+            dr_chord_go(1, 100);
+            run(secs(1.5f));
+            capture(x, 337 * 4, 0);
+            b0 = rms_of(x, 337 * 4);
+            dr_chord(0, 4800, 900, 0);
+            dr_chord(1, 6000, 400, 1);
+            dr_chord_go(1, 100);
+            capture(x, 337 * 20, 0);
+            for (i = 0; i < 20; i++)
+                lo_b = fminf(lo_b, rms_of(x + i * 337, 337) / b0);
+            printf("  Snap 100, the same bass: its lowest %.1f dB in the first 150 ms\n", (double)(20.0f * log10f(lo_b)));
+            check("chord, Snap 100: the same bass carries on (no dip over 1 dB)", lo_b > 0.89f);
+            dr_voice(1, 1);                         /* (back to C, as it was) */
+            dr_set(DR_GP(0, GP_MIX), dr_param_info(DR_GP(0, GP_MIX))->def);
+            dr_chord(0, 4800, 700, 1);
+            dr_chord(1, 6400, 300, 1);
+            dr_chord_go(1, 100);
+            run(secs(1.0f));
+        }
         dr_set(DR_GP(0, GP_PITCH), 3000);           /* the Pitch knob moves nothing under a chord */
         run(secs(0.3f));
         check("chord: the Pitch knob doesn't move a drone holding a chord", fabsf(dr_pitch[0] - 48.0f) < 0.01f);
@@ -1991,7 +2017,7 @@ int main(void)
                                                      * quiet, and in again on it */
         dr_chord(0, 4800, 700, 1);
         dr_chord(1, 6400, 300, 1);
-        dr_chord_rest(100);
+        dr_chord_rest(100, 0);
         run(secs(0.1f));
         p_mid = dr_pitch[0];
         run(secs(0.7f));
