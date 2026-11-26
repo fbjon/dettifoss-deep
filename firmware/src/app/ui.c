@@ -3353,6 +3353,31 @@ static void speak_dump(void)
 }
 #endif
 
+/* REMOTE (plat_fm1.c): while the emulator on a computer is played from this panel, the screen says so; after, every
+ * band drawn afresh */
+static uint8_t remote_on, remote_drawn;
+void ui_remote(int on)
+{
+    if (!on && remote_on) {
+        ui.sig[0] = ui.sig[1] = ui.sig[2] = 0;
+        lcd_fill(0, 0, 240, 240, LK_BG);
+    }
+    remote_on = (uint8_t)on;
+    remote_drawn = 0;
+}
+static void draw_remote(void)
+{
+    if (remote_drawn)
+        return;
+    remote_drawn = 1;
+    lcd_fill(0, 0, 240, 240, LK_BG);
+    cv_begin(240, 120, LK_BG);
+    text_c(120, 14, &FONT_L, "REMOTE", LK_WHITE);
+    text_c(120, 60, &LK_F_SOUND, "playing the emulator", LK_LABEL);
+    text_c(120, 84, &LK_F_SOUND, "on the computer", LK_LABEL);
+    cv_blit(0, 60);
+}
+
 void ui_frame(void)
 {
     input();
@@ -3361,6 +3386,13 @@ void ui_frame(void)
     tips_run();
     scene_morph();
     autosave();
+    if (remote_on) {
+        draw_remote();
+        leds();
+        ann_tick(plat_ms());
+        ui.frame++;
+        return;
+    }
     if (!ui.splash_done) {
         uint32_t t = plat_ms() - ui.splash_t0;
         if (ui.btn || ui.keys || t >= SPLASH_MS) {                    /* over, or a hand on the FM-1 */

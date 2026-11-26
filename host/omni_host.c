@@ -28,6 +28,8 @@
  *   said TEXT                    some SAY since the last "said" (or "listen") has TEXT in it (_ for a space): else a
  *                                failure
  *   speakdump                    every page, knob value and message as the reader gets them (fm1-reader's audit)
+ *   remote 1|0                   the emulator on a computer starts / stops playing from this panel (the screen it
+ *                                shows meanwhile; the panel's side is the device's, plat_fm1.c)
  * OMNI_SAID_LOG=FILE: a reader listens from boot, quietly, and every SAY is appended to FILE (the audit).
  * (The screen reader's hookup is FoMni's host's, Charles Vestal.)
  */
@@ -757,6 +759,8 @@ int main(int argc, char **argv)
             said_log[0] = 0;
         } else if (!strcmp(cmd, "speakdump"))
             speak_dump();
+        else if (!strcmp(cmd, "remote"))
+            ui_remote(atoi(a));
         else if (!strcmp(cmd, "notips"))            /* every one-time tip seen (the manual's pictures) */
             memset(proj.seen, 0xFF, sizeof proj.seen);
         else if (!strcmp(cmd, "classic")) {         /* the starting sound before 2026-10-17, for the scenarios made on

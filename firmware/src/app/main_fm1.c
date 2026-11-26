@@ -609,6 +609,7 @@ static void fm1_main(void)
                 uint32_t k10;
                 knob += (a * 16 - knob) / 8;
                 k10 = (uint32_t)(knob / 16);
+                master_k10 = k10;
                 /* a volume (square law) over the first 4/5 of the turn up to the engine's clean top (3277),
                  * then the drive in a straight line to 4096: the overdrive starts at 4/5 of the travel, as
                  * the README says (a square all the way put it at ~90 %). web/emu/index.html does the same. */
@@ -635,12 +636,13 @@ static void fm1_main(void)
                 enter_uboot("UBOOT");
             }
         }
-        {   /* a screen reader's SysEx (announce.c), before the updater and the backup look */
+        {   /* a screen reader's SysEx (announce.c) and the emulator's (REMOTE), before the updater and the backup look */
             const uint8_t *p;
             uint32_t n;
-            if (ota_frame_get(&p, &n) && ann_frame(p, n, fm1_ms))
+            if (ota_frame_get(&p, &n) && (ann_frame(p, n, fm1_ms) || rm_frame(p, n)))
                 ota_frame_done();
         }
+        rm_poll();                                  /* the panel played into the emulator (plat_fm1.c) */
         dbg_service();                              /* M-UPGRADE handshake, the load (other SysEx is dropped) */
         rx_run();
         if (usb.ota_req) {
