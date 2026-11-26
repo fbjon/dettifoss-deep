@@ -1951,11 +1951,12 @@ int main(void)
             run(1);
             lo = fminf(lo, rms());
         }
-        check("chord, Snap 100: the level dips out (under -30 dB)", lo < before * 0.03f);
-        check("chord, Snap 100: then at once on the chord's notes", fabsf(dr_pitch[0] - 48.0f) < 0.01f &&
+        printf("  Snap 100: lowest %.1f dB in the first 140 ms\n", (double)(20.0f * log10f(lo / before)));
+        check("chord, Snap 100: no gap, the old notes releasing under the new (over -6 dB)", lo > before * 0.5f);
+        check("chord, Snap 100: at once on the chord's notes", fabsf(dr_pitch[0] - 48.0f) < 0.01f &&
               fabsf(dr_pitch[1] - 64.0f) < 0.01f);
         run(secs(0.5f));
-        check("chord, Snap 100: back to its level after the dip", rms() > before * 0.7f);
+        check("chord, Snap 100: at its level", rms() > before * 0.7f);
         dr_set(DR_GP(0, GP_PITCH), 3000);           /* the Pitch knob moves nothing under a chord */
         run(secs(0.3f));
         check("chord: the Pitch knob doesn't move a drone holding a chord", fabsf(dr_pitch[0] - 48.0f) < 0.01f);

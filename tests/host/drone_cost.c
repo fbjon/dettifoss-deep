@@ -130,6 +130,7 @@ static const char *const names[] = {
     "the same, the reverb Shimmer (v0.3)",
     "the same, under a chord, gliding to it",
     "the same, the live macros up (Motion breathing)",
+    "the same, a pad's change every 0.25 s (bridge voices full)",
 };
 #define NCASES ((int)(sizeof names / sizeof names[0]))
 
@@ -165,7 +166,27 @@ static void setup(int c)
         dr_set(P_MOTION, 100);
         dr_set(P_SPACE, 100);
         break;
+    case 11:                                                        /* Snap's pad part: the old notes release under the
+                                                                     * new for 0.6 s, a change each 0.25 s (pad_render):
+                                                                     * every bridge voice busy */
+        drone(1, 2, 2);
+        dr_set(P_REV_TYPE, 4);
+        dr_chord(0, 4500, 700, 1);
+        dr_chord(1, 6000, 400, 1);
+        dr_chord_go(1, DR_SNAP_PAD);
+        break;
     }
+}
+
+static void pad_render(int32_t *out, uint32_t n, uint32_t gain)   /* case 11: a new chord every 43 blocks */
+{
+    static uint32_t b;
+    if (++b % 43u == 0) {
+        dr_chord(0, b & 64u ? 4100 : 4500, 700, 1);
+        dr_chord(1, b & 64u ? 5700 : 6000, 400, 1);
+        dr_chord_go(1, DR_SNAP_PAD);
+    }
+    dr_render(out, n, gain);
 }
 
 /* the limit: the engine's worst case under ~40 % of the device, leaving the rest for the delay, the
@@ -183,14 +204,14 @@ int main(int argc, char **argv)
         if (c < 0 || c >= NCASES)
             return 2;
         setup(c);
-        cost(dr_render, &ns);
+        cost(c == 11 ? pad_render : dr_render, &ns);
         printf("%s\n", names[c]);
         return 0;
     }
     printf("drone cost, host instructions per 44.1 kHz sample (device estimate 1.7 %% per 100):\n");
     for (c = 0; c < NCASES; c++) {
         setup(c);
-        ipc = cost(dr_render, &ns);
+        ipc = cost(c == 11 ? pad_render : dr_render, &ns);
         report(names[c], ipc, ns, limit(c));
     }
     printf(bad ? "drone cost: OVER LIMIT\n" : "drone cost: ok\n");
