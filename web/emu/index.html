@@ -581,18 +581,20 @@ const BLACK_JOB = [[["Partner"], AMBER], [["Sub"], AMBER], [["Filter"], AMBER], 
 const BLACK_LFO = [["Pitch", "LFO"], ["Pitch to", "X-Wave"], ["Cutoff", "LFO"], ["Cutoff", "to reso"], null,  // on the LFO pages: what the
   ["Pitch", "LFO"], ["Pitch to", "X-Wave"], ["Cutoff", "LFO"], ["Cutoff", "to reso"], ["Delay", "LFO"], null];   // key switches to (null: as ever; ui.c SW_LFO)
 const blackNames = [];                                // each changing key's two names: [normal, LFO pages]
-let liveCap = null;
+let liveCap = null, keyLeft = null, keyW = 0, keyTop = 0;
 (function keybed(x0, y0, w, h) {
   el("rect", { x: x0, y: y0, width: w, height: h, rx: 18, fill: TRAY });
   const pitch = (w - 24) / 16, kw = pitch * 0.78, wy = y0 + h * 0.46, wh = h * 0.49, by = y0 + h * 0.05, bh = h * 0.31;
   const left = (i) => x0 + 12 + i * pitch + (pitch - kw) / 2;
+  keyLeft = left; keyW = kw;
   for (let i = 0; i < 16; i++) {
     const g = el("g", { class: "ctl", role: "button", "aria-label": `white key ${i + 1}` });
     el("rect", { x: left(i), y: wy, width: kw, height: wh, rx: kw / 2, fill: KEY_W, class: "keyface white" }, g);
     const kx = left(i) + kw / 2, orig = el("g", {}, g);   // one label line along the bottom: scene numbers, gesture names
     text(orig, kx, wy + wh - 14, i < 8 ? String(i + 1) : GESTURES[i - 8], i < 8 ? 14 : 12.5, ON_KEY, 700, "job on-key");
     if (i >= 8) text(orig, kx, wy + 22, BANKS[i - 8], 10.5, MUTED_KEY, 600, "job on-key");   // with SEL: this bank
-    keys[WHITE_K[i]] = { g, orig, live: text(g, kx, wy + wh - 14, "", 13, ON_KEY, 700, "job on-key") };
+    keys[WHITE_K[i]] = { g, orig, live: text(g, kx, wy + wh - 14, "", 13, ON_KEY, 700, "job on-key"),
+                         phys: text(g, kx, wy + 22, "", 10.5, MUTED_KEY, 600, "job on-key") };
   }
   BLACK_AFTER.forEach((a, k) => {
     const g = el("g", { class: "ctl", role: "button", "aria-label": `black key ${k + 1}` });
@@ -606,10 +608,11 @@ let liveCap = null;
     };
     const normal = name(words, ON_KEY, {});
     if (BLACK_LFO[k]) blackNames.push([normal, name(BLACK_LFO[k], ON_KEY_LFO, { class: "lfo", display: "none" })]);
-    keys[BLACK_K[k]] = { g, orig, live: text(g, cx, by + 56.5, "", 12.5, ON_KEY, 700, "job on-key") };
+    keys[BLACK_K[k]] = { g, orig, live: text(g, cx, by + 56.5, "", 12.5, ON_KEY, 700, "job on-key"),
+                         phys: text(g, cx, by + 26, "", 10.5, MUTED_KEY, 600, "job on-key") };
   });
   const capY = 451;                                 // the captions, in the strip between the rows
-  liveCap = text(svg, x0 + w / 2, capY + 4, "", 11.5, LEGEND, 600, "brk");   // (the Live page's: one line)
+  keyTop = capY;
   bracket(left(0), left(7) + kw, capY, "Presets & scenes · tap: go · SAVE + tap: store", LEGEND, 11.5, 4);
   bracket(left(8), left(11) + kw, capY, "Gestures · press · with SEL: bank", LEGEND, 11.5, 4);
   bracket(left(12), left(15) + kw, capY, "Gestures · with SEL: bank", LEGEND, 11.5, 4);
@@ -621,28 +624,39 @@ let liveCap = null;
 const NOTE = ["F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#", "E"];   // key 0 F3
 const OVER_C = ["4", "b5", "5", "b6", "6", "b7", "7", "1", "b2", "2", "b3", "3"];   // Q's right hand: each key as over C
 const MOD_KEY = { 13: "m", 15: "sus2", 17: "sus4", 20: "7", 22: "maj7", 25: "add9" };
-const LIVE = [
+const WI = (k) => WHITE_K.indexOf(k);                 // a white key's place, 0..15
+const LIVE = [   // seg: [first white key, last, caption]: brackets over the keyboard's parts, as Niagara Drift's
   { k: ["Dark", "Thick", "Motion", "Space"], oct: ["Oct −", "Oct +"], sel: "Mode", home: "Prog",
-    cap: "P · roots F3–E4 · modifiers on the black keys above, for the next root · G5: a bass apart",
+    seg: [[0, 6, "Roots F3–E4 · tap: the chord"], [7, 14, "Modifiers, on the black keys · for the next root"], [15, 15, "Bass"]],
     key: (k) => k < 12 ? NOTE[k] : MOD_KEY[k] || (k === 26 ? "Bass" : "") },
   { k: ["Height", "Spread", "Dark", "Thick"], oct: ["Bass", "Root"], sel: "Mode", home: "Prog",
-    cap: "Q · left hand: the root (OCT− lit: the bass alone, OCT+ lit: the root alone) · right hand: the shape, as over C",
+    seg: [[0, 6, "Left hand: the root · OCT− the bass alone, OCT+ the root alone"], [7, 14, "Right hand: the shape, as over C"]],
     key: (k) => k < 12 ? NOTE[k] : k < 26 ? OVER_C[k % 12] : "" },
   { k: ["Height", "Spread", "Dark", "Thick"], oct: ["Oct −", "Oct +"], sel: "Mode", home: "Prog",
-    cap: "R · keys held together: the chord, the lowest its bass · while one's held, tap a key in it: out",
-    key: (k) => NOTE[k % 12] },
+    seg: [[0, 15, "Keys held together: the chord, the lowest its bass · while one's held, tap a key in it: out"]],
+    key: (k) => NOTE[k % 12], noPhys: true },
   { k: ["Dark", "Thick", "Motion", "Space"], oct: ["Oct −", "Oct +"], sel: "F3: way", home: "Chords",
-    cap: "Progression · F3 the next chord, F#3 the one before · G5 holds the bass · SEL + F3: rest or hold",
+    seg: [[0, 0, "Next"], [2, 13, "F#3: the chord before · SEL + F3: rest or hold"], [15, 15, "Bass"]],
     key: (k) => k === 0 ? "Next" : k === 1 ? "Prev" : k === 26 ? "Bass" : "" }];
+const niagBr = brackets.slice();                      // Niagara Drift's brackets (the drones', the keys')
+LIVE.forEach((L) => {
+  L.br = L.seg.map(([a, b, cap]) => { bracket(keyLeft(a), keyLeft(b) + keyW, keyTop, cap, LEGEND, 11.5, 4); return brackets[brackets.length - 1]; });
+  L.br.forEach((b) => b.g.setAttribute("display", "none"));
+});
+const physName = (k) => NOTE[k % 12] + (Math.floor((53 + k) / 12) - 1);   // key 0 F3
 let liveState = -1;
 function setJob(c, s, col) { c.job.textContent = s; c.job.style.fill = col; }
 function drawLive(st) {
   if (st === liveState) return;
   liveState = st;
   const L = LIVE[st];
-  for (const b of brackets) b.g.setAttribute("display", L ? "none" : "inline");
-  liveCap.textContent = L ? L.cap : "";
-  keys.forEach((k, i) => { k.orig.setAttribute("display", L ? "none" : "inline"); k.live.textContent = L ? L.key(i) : ""; });
+  for (const b of niagBr) b.g.setAttribute("display", L ? "none" : "inline");
+  LIVE.forEach((M) => M.br.forEach((b) => b.g.setAttribute("display", M === L ? "inline" : "none")));
+  keys.forEach((k, i) => {
+    k.orig.setAttribute("display", L ? "none" : "inline");
+    k.live.textContent = L ? L.key(i) : "";
+    k.phys.textContent = L && !L.noPhys ? physName(i) : "";
+  });
   for (let i = 0; i < 4; i++) setJob(knobs[`KNOB${i + 1}`], L ? L.k[i] : "", PALE);
   setJob(knobs.ALGORITHM, L ? "Snap" : knobs.ALGORITHM.what, L ? PALE : knobs.ALGORITHM.col);
   setJob(buttons["OCT-"], L ? L.oct[0] : buttons["OCT-"].what, L ? PALE : buttons["OCT-"].col);
