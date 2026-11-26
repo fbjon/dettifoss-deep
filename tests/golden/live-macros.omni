@@ -3,6 +3,7 @@
 # in detents of 10 from 0 down to -100, up to 100 and back, on a still sound (no Swell, Drift, filter LFOs or detune,
 # so what moves is the macro); then Space's tail, the drones stopped at -100, 0, 100.
 # Not a test of its own.
+page 0
 notips
 set 55 0
 set 52 0

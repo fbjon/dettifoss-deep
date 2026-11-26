@@ -2,6 +2,7 @@
 # the same-samples check (tools/same_samples.py): the Pitch page (0.3.1): drone I's wave over drone II's on one
 # time line, cycle ticks, the interval with its arrow first; a few cents' detune sliding; Reso and a filter key as
 # the river bed under the wave. No expectations (main's build plays this script too).
+page 0
 notips
 phones 1
 set 74 0

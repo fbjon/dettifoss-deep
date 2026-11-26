@@ -3,6 +3,7 @@
 # time (6.5 s at Gesture time 50); easing off, it comes back; let go, back to none. A tap latches it at 100; tapping
 # a latched one lets it go. SEL tapped while one is held latches it where it has got to (gamN: gesture N x 100;
 # heard42 cross-mod, heard43 its amount, heard55 the Swell). The scenes play keys 1-8.
+page 0
 pressure w8 0
 pressure w9 0
 pressure w10 0

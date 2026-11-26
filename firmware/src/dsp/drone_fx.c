@@ -357,11 +357,15 @@ static void rv_coefs(float ease)
     float rt = rv_rt60(par[P_REV_LEN]), fsec, e;
     int inf = rt <= 0.0f;
     uint32_t i;
+    const float cut = chord_cut();
     if (inf && fade_target <= 0.0f) {   /* stopped or stopping: a freeze lets go, over about twice the Fade */
         fsec = fm_maxf(2.0f * dr_time_s(P_FADE, par[P_FADE]), 1.5f);
         rt = fsec;
         inf = 0;
     }
+    if (cut > 0.0f && !inf)              /* a chord change cutting the tail: toward 0.2 s (a freeze is held: it was
+                                          * asked for) */
+        rt = rt * (1.0f - cut) + 0.2f * cut;
     for (i = 0; i < 8u; i++) {           /* g = 10^(-3 L / (RT60 fs)) */
         float g = inf ? 0.99988f : fm_exp2f(-9.965784f * rv.cur[i] / (rt * RV_FS));
         rv.g[i] += (g - rv.g[i]) * ease;
@@ -608,7 +612,8 @@ static DR_RAM_CODE void fx_run(float *l, float *r, uint32_t n)
     /* stopped or stopping, the repeats can't run away: they ring out (QA 2026-10-20: at 90+ the howl went on after
      * PLAY, with "PLAY to start" on the screen) */
     const float ms = DR_FAR(dly_ms_now)(),
-                fbg1 = fade_target <= 0.0f ? fm_minf(rep_g(pfs[P_DLY_REPEATS]), 0.85f) : rep_g(pfs[P_DLY_REPEATS]);
+                cut = 1.0f - chord_cut(),       /* a chord change cutting the tails: the repeats dip */
+                fbg1 = (fade_target <= 0.0f ? fm_minf(rep_g(pfs[P_DLY_REPEATS]), 0.85f) : rep_g(pfs[P_DLY_REPEATS])) * cut;
     const float dm = pfs[P_DLY_MIX] * 0.01f, dry1e = fm_sqrtf(1.0f - dm), wet1e = fm_sqrtf(dm);
     const float rm = pfs[P_REV_MIX] * 0.01f, dry2e = fm_sqrtf(1.0f - rm), wet2e = fm_sqrtf(rm);
     const float dn = 1.0f / (float)(n ? n : 1u);

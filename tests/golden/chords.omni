@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # the same-samples check (tools/same_samples.py): the chord layer, C Am F G and back to the sound, at Snap 50 (a
 # 300 ms glide with a slight dip), 0 (4 s glides) and 100 (each change a new attack). Not a test of its own.
+page 0
 notips
 tap PLAY
 wait 2500

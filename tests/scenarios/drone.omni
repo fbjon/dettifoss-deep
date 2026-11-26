@@ -1,4 +1,5 @@
 # from the starting sound before 2026-10-17 (these checks were made on it)
+page 0
 classic
 # scenes switch in 1.1 s here (the Scene time at 30; 46, ~4 s, on a new FM-1 since 2026-10-19)
 set 71 24
@@ -89,7 +90,7 @@ wait 900
 expect par0 5117
 # HOME again: Pitch, each drone's pitch and resonance (KNOB 1-2 drone I, 3-4 drone II); since v0.3 the levels are on
 # Drones (page 0) with the cutoffs
-tap HOME
+tap SEL+HOME
 expect view 1
 page 0
 spin K3 -20
@@ -110,7 +111,7 @@ wait 500
 set 11 75
 wait 100
 shot play2.png
-tap HOME
+tap SEL+HOME
 expect view 0
 # OCT- / OCT+: the LFO's waves (v0.2): a tap is the next shape, round and round; SEL + OCT the one before
 expect par48 1
@@ -290,7 +291,7 @@ spin K3 -20
 tap LFO
 expect view 6
 # the normal keys (back on Play): partner, sub -2, HP, hard sync, cross-mod
-tap HOME
+tap SEL+HOME
 expect view 0
 tapkey b0
 expect par12 0
@@ -367,7 +368,7 @@ expect par55 0
 tap ARP
 expect par55 1
 expect view 12
-tap HOME
+tap SEL+HOME
 expect view 0
 press ARP
 expect view 12
@@ -383,7 +384,7 @@ expect view 12
 expect par55 1
 tap ARP
 expect par55 0
-tap HOME
+tap SEL+HOME
 expect view 0
 # REC: the motion loop. Record two turns of KNOB 2 (drone I's cutoff, 50 now), 0.3 s apart, then loop:
 # it starts from where the recording did, plays the turns on time, comes round again; REC stops it where
@@ -480,7 +481,7 @@ shot fx-sel.png
 tap LFO
 tapkey b9
 expect par65 2
-tap HOME
+tap SEL+HOME
 expect view 0
 # SEQ: Partner, again: Pitch moves; GLO: Setup
 tap SEQ
@@ -504,14 +505,14 @@ tap GLO
 expect view 10
 # a page button opens the page last shown there: Reverb, then home, then FX held (a peek) shows Reverb; HOME is
 # always Drones
-tap HOME
+tap SEL+HOME
 expect view 0
 tap FX
 page 13
 tap FX
 page 14
 expect view 14
-tap HOME
+tap SEL+HOME
 expect view 0
 press FX
 page 14
@@ -520,18 +521,18 @@ expect view 14
 release FX
 page 0
 expect view 0
-tap HOME
+tap SEL+HOME
 expect view 1
 tap FX
 page 14
-tap HOME
+tap SEL+HOME
 expect view 0
 tap FX
 page 14
 tap FX
 page 13
 expect view 13
-tap HOME
+tap SEL+HOME
 # SELECT: the LFO rate; PRESETS: nothing yet (the macro to come), the waves stay
 spin SELECT 10
 expect par47 108
@@ -575,6 +576,7 @@ expect store_writes 2
 wavstop
 # everything comes back after a reboot
 reboot
+page 0
 wait 300
 expect par0 5017
 expect par21 6000
@@ -606,7 +608,7 @@ tap GLO
 expect view 11
 spin K3 30
 expect par53 90
-tap HOME
+tap SEL+HOME
 expect view 0
 # white key 1: back to the scene, morphing over the Scene switch time (1.1 s)
 tapkey w0
@@ -635,6 +637,7 @@ wait 100
 shot scenes.png
 # the scene survives a reboot (the SAVE above wrote it)
 reboot
+page 0
 wait 300
 expect scenes 1
 shot rebooted.png
@@ -736,6 +739,7 @@ expect scenes 1
 # (the autosave first: it waits for the tails to fade, and comes at most every 30 s)
 wait 32000
 reboot
+page 0
 wait 300
 press SEL
 tapkey w9
@@ -827,7 +831,7 @@ expect par99 0
 page 13
 spin K4 -1
 page 14
-tap HOME
+tap SEL+HOME
 # Wander's scale (Pitch moves, KNOB 4) goes round too: before the first (minor pentatonic) comes just intonation
 tap SEQ
 tap SEQ
@@ -837,7 +841,7 @@ spin K4 -1
 expect par81 5
 spin K4 1
 expect par81 0
-tap HOME
+tap SEL+HOME
 # CROSS-MOD (black key 11) goes round: off, cutoff, pitch (cross-FM, v0.3), Snarl (the output bending both, v0.3), off
 expect par42 0
 tapkey b10

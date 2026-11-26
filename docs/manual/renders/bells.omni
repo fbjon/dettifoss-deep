@@ -2,6 +2,7 @@
 # A recipe's render (tools/make_manual.py --renders): from P1, headphones, Pitch lock off, Scene time 0. Everything is
 # set before the recording (the recipe's moves reach the same settings, the reverb at 40); the clip is the bells.
 # "# @" marks the listening times (tools/make_manual.py --times).
+page 0
 notips
 phones 1
 set 74 0
@@ -12,13 +13,13 @@ wait 2500
 tap EDIT
 turn K1 -40 60
 turn K3 -40 60
-tap HOME
-tap HOME
+tap SEL+HOME
+tap SEL+HOME
 turn K1 35 60
 turn K3 36 60
 tap ARP
 tap ARP
-tap HOME
+tap SEL+HOME
 turn K2 30 60
 turn K4 30 60
 wait 1500

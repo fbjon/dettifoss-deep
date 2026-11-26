@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Help (tools/make_manual.py --renders): screens only. A backup staged over USB asks before it's restored.
+page 0
 notips
 wait 1500
 restoreask

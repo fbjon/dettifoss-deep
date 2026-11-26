@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* THE LIVE PAGE (SEL + HOME, again to leave): chords on the keys, played with one hand, over the drone.
+/* THE LIVE PAGE (HOME, where the FM-1 starts; HOME again: the progression, and back): chords on the keys, played with
+ * one hand, over the drone.
  *
  *   F3 .. E4       the twelve roots, latching: a tap plays that chord, its key lit while it sounds
  *   F#4 .. F#5     the modifiers, on the black keys above: Minor, Sus2, Sus4, 7, Maj7, Add9. A tap arms or
@@ -10,12 +11,28 @@
  *   SEL + the lit root   the chord let go: the drones back to the sound's own pitches
  *   OCT- / OCT+    the chords an octave down / up (-1 .. +1)
  *   KNOB 1-4       Dark-Bright, Thickness, Motion, Space (the live macros, a sound's)
- *   ALGORITHM      Snap: how a change lands, a 4 s glide at 0 .. a new attack at 100
+ *   ALGORITHM      Snap: how a change lands: a wash (a slow glide) .. legato (a short one) .. a pad's attack
  *
  * A chord is a bass and three tones over it: drone I's main note the bass, its partner the fifth, drone II's main
  * the third (or the sus), its partner the extension (or the root two octaves up), so Thickness, turned down, takes the
  * extension away first, then the third, then the fifth. Dark-Bright past +-50 moves the upper two tones an octave
- * (back inside +-40). Part of ui.c's unity build (after look.c) */
+ * (back inside +-40).
+ *
+ * THE PROGRESSION (HOME on the Live page; HOME again: the chords): a progression's chords stepped through, the keys
+ * above free for a lead (not yet):
+ *
+ *   F3 / F#3       the next / the previous chord, both always lit, taking turns at full each 0.5 s. Two ways
+ *                  (SEL + F3): REST: a tap steps; held, the chord is released, and letting go brings in the next
+ *                  (air between).
+ *                  HOLD: held, the chord plays; let go, it's released, and the next hold brings in the next.
+ *                  While a chord rests the drones move to the next one's notes, so it comes in on them
+ *   G5             BASS: the bass sounding held under the chords that follow, through rests too (lit), till tapped
+ *                  again
+ *   OCT, the knobs, ALGORITHM   as on the Live page
+ *
+ * SEL + HOME, on either, opens Niagara Drift's Drones and Pitch pages (again: the other), till the sound has its own.
+ *
+ * For now the progression is the demo's: C, Am, Fmaj7, G7, C. Part of ui.c's unity build (after look.c) */
 
 enum { LM_MIN, LM_SUS2, LM_SUS4, LM_7, LM_MAJ7, LM_ADD9, LM_N };
 static const char *const LV_MOD_NAME[LM_N] = {"m", "sus2", "sus4", "7", "maj7", "add9"};
@@ -24,6 +41,11 @@ static const char *const LV_PC[12] = {"C", "Db", "D", "Eb", "E", "F", "F#", "G",
 #define LV_BASS_K 26                           /* G5 */
 #define LV_NROOT 12                            /* F3 .. E4, keys 0 .. 11 */
 #define LV_LOW 41                              /* F3's root: its bass F2 (MIDI) */
+#define PG_NEXT 0                              /* F3 */
+#define PG_PREV 1                              /* F#3 */
+typedef struct { int8_t root; uint8_t mods; } pg_chord_t;
+static const pg_chord_t PG_DEMO[] = {{7, 0}, {4, 1u << LM_MIN}, {0, 1u << LM_MAJ7}, {2, 1u << LM_7}, {7, 0}};
+#define PG_N ((int)(sizeof PG_DEMO / sizeof PG_DEMO[0]))
 
 static struct {
     int8_t root;                               /* the chord sounding: its root key (0 .. 11), or -1 */
@@ -35,7 +57,14 @@ static struct {
     int8_t reg;                                /* Dark-Bright's octave for the upper tones now: -1, 0, 1 */
     uint8_t snap;
     int16_t note[4];                           /* the chord's notes as sent, MIDI: bass, fifth, third, extension */
-} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}};
+    uint8_t prog;                              /* the progression's page */
+    uint8_t hold;                              /* ... its way: 0 REST (held, released), 1 HOLD (held, played) */
+    int8_t step;                               /* the step sounding (or last sounded), -1 none yet */
+    int8_t to;                                 /* the step a held key goes to, -1 none */
+    uint8_t rest;                              /* the chord released */
+    int8_t pbass;                              /* ... a bass held under it (a root key), -1 none */
+    int16_t pnote;                             /* ... its note, MIDI, at no octave shift: it stays put */
+} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0};
 
 static char *lv_end(char *t)
 {
@@ -69,36 +98,125 @@ static void lv_name(int root, uint8_t m, int bass, char *t)   /* "Am7", "Csus4/G
     }
 }
 
-static void lv_send(void)                      /* the chord sounding to the drones, as Snap says */
+static void lv_notes(void)                     /* the chord's notes to the drones (taken up by dr_chord_go / a rest) */
 {
     const int lo = LV_LOW + lv.root + 12 * lv.oct, up = 12 * lv.reg;
     int b = lv.bass >= 0 ? LV_LOW + lv.bass + 12 * lv.oct : lo;
     if (b > lo)                                /* a bass set apart goes under the chord */
         b -= 12;
+    if (lv.prog && lv.pbass >= 0)              /* the progression's held bass: where it was */
+        b = lv.pnote + 12 * lv.oct;
     lv.note[0] = (int16_t)b;
     lv.note[1] = (int16_t)(lo + 7);
     lv.note[2] = (int16_t)(lo + 12 + lv_third(lv.smods) + up);
     lv.note[3] = (int16_t)(lo + 12 + lv_ext(lv.smods) + up);
     dr_chord(0, lv.note[0] * 100, (lv.note[1] - lv.note[0]) * 100, 1);
     dr_chord(1, lv.note[2] * 100, (lv.note[3] - lv.note[2]) * 100, 1);
+}
+static void lv_send(void)                      /* the chord sounding to the drones, as Snap says */
+{
+    lv_notes();
     dr_chord_go(1, lv.snap);
+    lv.rest = 0;
 }
 
-static void live_toggle(void)
+static void pg_load(int i)                     /* step i as the chord (its notes sent, not yet taken up) */
 {
-    if (ui.view == V_LIVE) {
-        set_view(V_PLAY);
-        say("LIVE", "OFF");
-    } else {
-        set_view(V_LIVE);
-        say("LIVE", "CHORDS ON THE KEYS");
+    lv.root = PG_DEMO[i].root;
+    lv.smods = PG_DEMO[i].mods;
+    lv.bass = lv.pbass;
+    lv_notes();
+}
+static int pg_after(int dir) { return lv.step < 0 ? 0 : (lv.step + dir + PG_N) % PG_N; }
+static void pg_go(int i)                       /* step i in */
+{
+    lv.step = (int8_t)i;
+    pg_load(i);
+    dr_chord_go(1, lv.snap);
+    lv.rest = 0;
+}
+static int live_prog(void) { return lv.prog; }
+static void pg_rest(int next)                  /* released, the drones moving to step next's notes */
+{
+    int16_t was[4];
+    int i;
+    if (lv.root < 0 || lv.rest)
+        return;
+    for (i = 0; i < 4; i++)
+        was[i] = lv.note[i];
+    pg_load(next);
+    for (i = 0; i < 4; i++)                    /* (the screen still shows the chord resting) */
+        lv.note[i] = was[i];
+    lv.root = PG_DEMO[lv.step].root;
+    lv.smods = PG_DEMO[lv.step].mods;
+    dr_chord_rest(lv.snap, lv.pbass >= 0);     /* (a held bass sounds on through it) */
+    lv.rest = 1;
+}
+static void pg_keys(uint32_t keys, uint32_t ch)
+{
+    int k;
+    if ((ch & keys) >> LV_BASS_K & 1u) {       /* G5: the bass sounding held under the next chords, or let go */
+        if (lv.pbass >= 0) {
+            const int was = lv.bass;
+            lv.pbass = lv.bass = -1;
+            if (lv.root >= 0 && !lv.rest && was >= 0 && was != lv.root)
+                lv_send();                     /* (under a chord of another root: back on its own) */
+        } else if (lv.root >= 0) {
+            lv.pbass = lv.bass = lv.bass >= 0 ? lv.bass : lv.root;   /* (sounding already: nothing to send) */
+            lv.pnote = (int16_t)(lv.note[0] - 12 * lv.oct);
+        }
     }
+    for (k = PG_NEXT; k <= PG_PREV; k++) {
+        const int dir = k == PG_NEXT ? 1 : -1;
+        if (!(ch >> k & 1u))
+            continue;
+        if (keys >> k & 1u) {                  /* the press */
+            if (ui.btn >> B_SEL & 1u) {        /* SEL + F3: the way */
+                ui.btn_used |= 1u << B_SEL;
+                if (k == PG_NEXT) {
+                    lv.hold ^= 1u;
+                    say("PROGRESSION", lv.hold ? "HOLD TO PLAY" : "HOLD TO REST");
+                }
+                continue;
+            }
+            lv.to = (int8_t)pg_after(dir);
+            if (lv.hold)
+                pg_go(lv.to);
+            else
+                pg_rest(lv.to);
+        } else if (lv.to >= 0) {               /* let go */
+            if (lv.hold) {
+                lv.to = -1;
+                pg_rest(pg_after(dir));
+            } else {
+                pg_go(lv.to);
+                lv.to = -1;
+            }
+        }
+    }
+}
+
+static void live_home(void)                    /* HOME: back to the Live page as it was, and on it the other */
+{
+    lv.to = -1;
+    if (ui.view == V_LIVE)
+        lv.prog ^= 1u;
+    else
+        set_view(V_LIVE);
+    if (lv.prog)
+        say("PROGRESSION", lv.hold ? "HOLD TO PLAY" : "HOLD TO REST");
+    else
+        say("LIVE", "CHORDS ON THE KEYS");
 }
 
 static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
 {
     const uint32_t dn = ch & keys;
     int k;
+    if (lv.prog) {
+        pg_keys(keys, ch);
+        return;
+    }
     for (k = 0; k < LV_NROOT; k++) {
         if (!(dn >> k & 1u))
             continue;
@@ -151,15 +269,15 @@ static void live_oct(int up)                   /* OCT- / OCT+ on the page: the r
     if (o < -1 || o > 1)
         return;
     lv.oct = (int8_t)o;
-    if (lv.root >= 0)
+    if (lv.root >= 0 && !lv.rest)
         lv_send();
 }
 
 static void live_snap(int32_t e)               /* ALGORITHM on the page: Snap */
 {
-    int v = (int)lv.snap + (int)e * 2;
+    int v = (int)lv.snap + (int)e * 5;
     lv.snap = (uint8_t)(v < 0 ? 0 : v > 100 ? 100 : v);
-    scopy(ui.glab[0], "SNAP");
+    scopy(ui.glab[0], lv.snap < DR_SNAP_LEGATO ? "SNAP: WASH" : lv.snap < DR_SNAP_PAD ? "SNAP: LEGATO" : "SNAP: PAD");
     itoa_u(lv.snap, ui.glab[1]);
     ui.glab_until = plat_ms() + 1500u;
     ui.act_t = plat_ms();
@@ -171,7 +289,7 @@ static void live_run(void)                     /* each frame: Dark-Bright's octa
     const int r = d >= 50 ? 1 : d <= -50 ? -1 : (lv.reg > 0 && d > 40) || (lv.reg < 0 && d < -40) ? lv.reg : 0;
     if (r != lv.reg) {
         lv.reg = (int8_t)r;
-        if (lv.root >= 0)
+        if (lv.root >= 0 && !lv.rest)
             lv_send();
     }
 }
@@ -179,6 +297,9 @@ static void live_run(void)                     /* each frame: Dark-Bright's octa
 static int live_led(int k)                     /* a key's light on the page, 0..255; -1 not the page's */
 {
     int m;
+    if (lv.prog)                               /* the progression: next and previous, taking turns at full */
+        return k == LV_BASS_K ? (lv.pbass >= 0 ? 255 : 0)
+                              : k > PG_PREV ? 0 : (int)(plat_ms() / 500u & 1u) == k ? 255 : 96;
     if (k < LV_NROOT)
         return k == lv.root ? 255 : k == lv.bass ? LED_DIM : 0;
     for (m = 0; m < LM_N; m++)
@@ -200,7 +321,7 @@ static void lk_pic_live(void)
         lv_name(lv.root, lv.smods, lv.bass, t);
     else
         scopy(t, "no chord");
-    text_c(120, 14, lv.root >= 0 ? &FONT_L : &LK_F_SOUND, t, lv.root >= 0 ? LK_WHITE : LK_LABEL);
+    text_c(120, 14, lv.root >= 0 ? &FONT_L : &LK_F_SOUND, t, lv.root >= 0 && !lv.rest ? LK_WHITE : LK_LABEL);
     if (lv.root >= 0) {
         static const char *const ROLE[4] = {"bass", "5th", "3rd", "top"};
         for (i = 0; i < 4; i++) {
@@ -219,7 +340,14 @@ static void lk_pic_live(void)
     {   /* the line under: what the next chord takes, the bass, the octave, Snap */
         int32_t x = 10;
         const int32_t y = LK_PIC_H - (int32_t)LK_F_TAG.h - 4;
-        if (lv.bass_arm)
+        if (lv.prog) {                         /* the progression's steps, the one sounding in gold */
+            for (i = 0; i < PG_N; i++) {
+                char c[12];
+                lv_name(PG_DEMO[i].root, PG_DEMO[i].mods, -1, c);
+                x = cv_text(x, y, &LK_F_TAG, c, i == lv.step ? LK_GOLD : LK_LABEL);
+                x = cv_text(x, y, &LK_F_TAG, " ", LK_LABEL);
+            }
+        } else if (lv.bass_arm)
             x = cv_text(x, y, &LK_F_TAG, "bass: tap a root", LK_GOLD);
         else if (lv.mods) {
             x = cv_text(x, y, &LK_F_TAG, "next ", LK_LABEL);
@@ -230,6 +358,8 @@ static void lk_pic_live(void)
                 }
         }
         t[0] = 0;
+        if (lv.prog)
+            scat(t, lv.hold ? "hold  " : "rest  ");
         if (lv.oct)
             scat(t, lv.oct > 0 ? "oct +1  " : "oct -1  ");
         scat(t, "snap ");

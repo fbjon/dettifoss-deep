@@ -1951,11 +1951,38 @@ int main(void)
             run(1);
             lo = fminf(lo, rms());
         }
-        check("chord, Snap 100: the level dips out (under -30 dB)", lo < before * 0.03f);
-        check("chord, Snap 100: then at once on the chord's notes", fabsf(dr_pitch[0] - 48.0f) < 0.01f &&
+        printf("  Snap 100: lowest %.1f dB in the first 140 ms\n", (double)(20.0f * log10f(lo / before)));
+        check("chord, Snap 100: no gap, the old notes releasing under the new (over -6 dB)", lo > before * 0.5f);
+        check("chord, Snap 100: at once on the chord's notes", fabsf(dr_pitch[0] - 48.0f) < 0.01f &&
               fabsf(dr_pitch[1] - 64.0f) < 0.01f);
         run(secs(0.5f));
-        check("chord, Snap 100: back to its level after the dip", rms() > before * 0.7f);
+        check("chord, Snap 100: at its level", rms() > before * 0.7f);
+        {                                           /* Am/C at Snap 100: the bass C3 carries on, no dip (drone I alone,
+                                                     * no partner, no sub: the bass, a period at a time) */
+            static float x[8192];
+            float b0, lo_b = 10.0f;
+            dr_voice(1, 0);
+            dr_set(DR_GP(0, GP_MIX), 0);
+            dr_chord(0, 4800, 700, 0);
+            dr_chord_go(1, 100);
+            run(secs(1.5f));
+            capture(x, 337 * 4, 0);
+            b0 = rms_of(x, 337 * 4);
+            dr_chord(0, 4800, 900, 0);
+            dr_chord(1, 6000, 400, 1);
+            dr_chord_go(1, 100);
+            capture(x, 337 * 20, 0);
+            for (i = 0; i < 20; i++)
+                lo_b = fminf(lo_b, rms_of(x + i * 337, 337) / b0);
+            printf("  Snap 100, the same bass: its lowest %.1f dB in the first 150 ms\n", (double)(20.0f * log10f(lo_b)));
+            check("chord, Snap 100: the same bass carries on (no dip over 1 dB)", lo_b > 0.89f);
+            dr_voice(1, 1);                         /* (back to C, as it was) */
+            dr_set(DR_GP(0, GP_MIX), dr_param_info(DR_GP(0, GP_MIX))->def);
+            dr_chord(0, 4800, 700, 1);
+            dr_chord(1, 6400, 300, 1);
+            dr_chord_go(1, 100);
+            run(secs(1.0f));
+        }
         dr_set(DR_GP(0, GP_PITCH), 3000);           /* the Pitch knob moves nothing under a chord */
         run(secs(0.3f));
         check("chord: the Pitch knob doesn't move a drone holding a chord", fabsf(dr_pitch[0] - 48.0f) < 0.01f);
@@ -1963,22 +1990,21 @@ int main(void)
         run(8);                                     /* (over a few cycles: a block is under one at C3) */
         before = rms();
         lo = 1.0f;
-        dr_chord(0, 4500, 700, 1);                  /* Am at Snap 50: 300 ms, a breath of a dip */
+        dr_chord(0, 4500, 700, 1);                  /* Am at Snap 50, legato: no dip, every voice glides ~155 ms */
         dr_chord(1, 6000, 400, 1);
         dr_chord_go(1, 50);
         for (i = 0; i < 4; i++) {
             run(3);
             lo = fminf(lo, rms());
         }
-        run(secs(0.11f));
-        p_mid = dr_pitch[0];
-        run(secs(0.4f));
+        p_mid = dr_pitch[1];
+        run(secs(0.3f));
         p_end = dr_pitch[0];
-        printf("  Snap 50: dip %.1f dB; pitch %.2f after ~0.18 s, %.2f after ~0.6 s\n", (double)(20.0f * log10f(lo / before)),
-               (double)p_mid, (double)p_end);
-        check("chord, Snap 50: a slight dip (0.5 .. 3 dB)", lo < before * 0.94f && lo > before * 0.7f);
-        check("chord, Snap 50: a glide (part way at 180 ms, there by 600)", p_mid < 47.5f && p_mid > 45.5f &&
-              fabsf(p_end - 45.0f) < 0.01f);
+        printf("  Snap 50: dip %.1f dB; drone II %.2f after ~70 ms; bass %.2f after ~0.37 s\n",
+               (double)(20.0f * log10f(lo / before)), (double)p_mid, (double)p_end);
+        check("chord, Snap 50: legato, no dip (under 1.5 dB)", lo > before * 0.84f);
+        check("chord, Snap 50: every voice glides, quickly (part way at 70 ms, there by 370)",
+              p_mid < 63.5f && p_mid > 60.5f && fabsf(p_end - 45.0f) < 0.01f && fabsf(dr_pitch[1] - 60.0f) < 0.01f);
         dr_chord(0, 4100, 1600, 1);                 /* F at Snap 0: a 4 s glide, no dip */
         dr_chord(1, 6000, 0, 0);
         dr_chord_go(1, 0);
@@ -1987,6 +2013,24 @@ int main(void)
         run(secs(2.5f));
         check("chord, Snap 0: a slow glide (part way at 2 s, there by 4.5)", p_mid < 44.0f && p_mid > 42.0f &&
               fabsf(dr_pitch[0] - 41.0f) < 0.01f);
+        before = rms();                             /* a rest, then C at Snap 100: released, the drones moving to C once
+                                                     * quiet, and in again on it */
+        dr_chord(0, 4800, 700, 1);
+        dr_chord(1, 6400, 300, 1);
+        dr_chord_rest(100, 0);
+        run(secs(0.1f));
+        p_mid = dr_pitch[0];
+        run(secs(0.7f));
+        lo = rms();
+        p_end = dr_pitch[0];
+        dr_chord_go(1, 100);
+        run(secs(0.25f));
+        printf("  rest: %.1f dB after 0.8 s; bass %.2f at 0.1 s, %.2f at 0.8 s; back %.1f dB\n",
+               (double)(20.0f * log10f(lo / before)), (double)p_mid, (double)p_end, (double)(20.0f * log10f(rms() / before)));
+        check("chord rest: released (down over 10 dB, the reverb still ringing)", lo < before * 0.32f);
+        check("chord rest: the notes stay while heard, then move to the next", fabsf(p_mid - 41.0f) < 0.01f &&
+              fabsf(p_end - 48.0f) < 0.01f);
+        check("chord rest: in again at its level", rms() > before * 0.7f && fabsf(dr_pitch[1] - 64.0f) < 0.01f);
         dr_chord_go(0, 50);                         /* let go: back to the sound's Pitch, as it is now */
         run(secs(0.8f));
         check("chord let go: back to the Pitch", fabsf(dr_pitch[0] - 30.0f) < 0.01f && fabsf(dr_pitch[1] - 50.0f) < 0.01f);

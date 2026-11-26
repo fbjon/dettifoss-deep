@@ -223,7 +223,7 @@ static struct {
     uint8_t splash_done;
 } ui;
 static void live_keys(uint32_t keys, uint32_t ch);   /* the Live page (live.c) */
-static void live_toggle(void);
+static void live_home(void);
 static void live_oct(int up);
 static void live_snap(int32_t e);
 static void live_run(void);
@@ -1909,9 +1909,15 @@ static void input(void)
         uint32_t m = 1u << i;
         if (!(ch & m))
             continue;
-        if (i == B_HOME && (btn & m) && (btn >> B_SEL & 1u)) {   /* SEL + HOME: the Live page, or back */
+        if (i == B_HOME && ((btn & m) ? !(btn >> B_SEL & 1u) : ui.hold_btn != B_HOME)) {
+            if (btn & m)                               /* HOME: the Live page, and on it the chords or the progression */
+                ui.btn_used &= ~m;                     /* (on the let-go, unless HOME + PLAY used it) */
+            else if (!(ui.btn_used & m))
+                live_home();
+        } else if (i == B_HOME && (btn & m)) {        /* SEL + HOME: the Drones and Pitch pages (Niagara Drift's
+                                                        * HOME), till the sound has a page of its own */
             ui.btn_used |= 1u << B_SEL | m;
-            live_toggle();
+            page_down((int)i);
         } else if (page_btn((int)i) >= 0) {            /* page buttons: on the press and the release */
             if (btn & m)
                 page_down((int)i);
@@ -1934,9 +1940,10 @@ static void input(void)
                 param_set(P_II_OUT, proj.par[P_II_OUT] ^ 1);   /* a sound's: scenes keep it */
                 say_c("DRONE II", DR_OUT(proj.par[P_II_OUT], 1) ? "OUT" : "IN", K_DRONE[1]);
             } else if (i == B_PLAY && (btn >> B_HOME & 1u)) {   /* HOME + PLAY (0.3.1, Evan): drone I alone, out /
-                                                        * in, beside drone II's SEL + PLAY; HOME's hold was a peek:
-                                                        * let go, back on the page it came from */
+                                                        * in, beside drone II's SEL + PLAY; HOME's let-go then
+                                                        * does nothing (a hold of SEL + HOME was a peek) */
                 ui.hold_turned = 1;
+                ui.btn_used |= 1u << B_HOME;
                 param_set(P_II_OUT, proj.par[P_II_OUT] ^ 2);
                 say_c("DRONE I", DR_OUT(proj.par[P_II_OUT], 0) ? "OUT" : "IN", K_DRONE[0]);
             } else if (i == B_PLAY) {                  /* PLAY on the press */
@@ -2489,6 +2496,7 @@ void ui_init(void)
     ui.press = -1;
     ui.scene_at = -1;
     ui.km_key = -1;
+    ui.view = V_LIVE;                                  /* the start: the Live page */
     ui.jack = dr_phones = (uint8_t)plat_headphones();
     ui.save_q = -2;
     ui.splash_t0 = plat_ms();
@@ -2498,7 +2506,7 @@ void ui_init(void)
 /* ------------------------------------------------------------- the start --- */
 /* Into the deep: on a navy that deepens downwards, thin lines of water fall from a ledge, quicker as they drop, and
  * where they meet the deep they become four slow waves, the drone (its intervals: 1, 3/2, 2 and 5/4). The name
- * fades in above. It holds still for half a second, then fades to the Drones page slowly. About 3.5 s (the last
+ * fades in above. It holds still for half a second, then fades to the Live page slowly. About 3.5 s (the last
  * 1.3 s the fade); any button or key ends it at once (and does what it does). The drones stay silent until PLAY.
  * Not in the host simulator's scenarios, which start at once (the browser emulator has it; OM_SPLASH shows it on
  * the host). */

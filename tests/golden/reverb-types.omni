@@ -4,6 +4,7 @@
 # changes, the room is the Hall's (Evan, 2026-11-10: "it should wash in and out"). Then Cathedral to the Hall: a
 # type's crossfade is 200 ms (at 50 the level jumped up to 6 dB leaving the Cathedral). Not a test of its own (no
 # expectations).
+page 0
 notips
 phones 1
 set 55 0

@@ -2,6 +2,7 @@
 # A recipe's render (tools/make_manual.py --renders): from P4, headphones, Pitch lock off, Scene time 0. The bright
 # figure is set up before the recording (its moves take ~10 s); the clip starts on it stepping.
 # "# @" marks the listening times (tools/make_manual.py --times).
+page 0
 notips
 phones 1
 set 74 0
@@ -12,7 +13,7 @@ wait 2500
 tap EDIT
 expect view 4
 turn K3 67 40
-tap HOME
+tap SEL+HOME
 expect view 0
 turn K4 45 60
 turn K3 15 60

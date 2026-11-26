@@ -1,4 +1,5 @@
 # from the starting sound before 2026-10-17 (these checks were made on it)
+page 0
 classic
 # Pitch lock off (on at start since 2026-10-19): these move the pitch
 set 74 0
@@ -13,7 +14,7 @@ tap ENV
 expect view 2
 spin K2 -30
 expect par52 0
-tap HOME
+tap SEL+HOME
 expect view 0
 tap PLAY
 wait 1500

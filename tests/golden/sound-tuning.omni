@@ -4,6 +4,7 @@
 # then the Tuning set back to 12-tone (0) and Wander heard there; A1 tapped (Scene time 1.1 s, par71 24): LMY comes
 # back with it, half way through the glide; then P1 Niagara, which names no Tuning: 12-tone again. The Setup 2 page
 # after A1. Not a test of its own (no expectations; tests/scenarios/tuning.omni has them).
+page 0
 notips
 set 74 0
 set 51 0
@@ -32,7 +33,7 @@ tap GLO
 tap GLO
 wait 300
 shot sound-tuning-setup.png
-tap HOME
+tap SEL+HOME
 press SEL
 tapkey w14
 release SEL

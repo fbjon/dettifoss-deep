@@ -1,5 +1,6 @@
 # gestures, from the 0.2 QA (2026-10-20): SEL as you let go keeps a gesture where it is (it had jumped: Shift's
 # drones swapped); letting go only brings things back (Wash's reverb length had jumped to Inf on the way out)
+page 0
 set 74 0
 tap PLAY
 set 55 0

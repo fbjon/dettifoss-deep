@@ -2,6 +2,7 @@
 # where the sound is: scene 1.1 at 700, the sound before it at 300. The pressure is where the sound heads; it
 # glides there no faster than the whole way in a Scene time (here 1.1 s: Setup 1 KNOB 3 at 24), after the
 # first 250 ms (a tap so far)
+page 0
 set 71 24
 # drone I's cutoff at 700 (the starting sound's before 2026-11-08)
 set 7 700
@@ -157,7 +158,7 @@ wait 300
 expect par75 80
 tap GLO
 spin K3 13
-tap HOME
+tap SEL+HOME
 tapkey w1
 wait 400
 spin ALGO 10

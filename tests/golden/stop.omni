@@ -3,6 +3,7 @@
 # the fade and settle on one thin gray line, as at power-up (Evan, 2026-11-10: they had stayed lit); Drones 2's
 # waves the same. Then Shimmer switched off (it washes out over 6 s) and on again: it starts clean, not with its last audio. Not a test of
 # its own (no expectations).
+page 0
 notips
 wav stop.wav
 wait 300

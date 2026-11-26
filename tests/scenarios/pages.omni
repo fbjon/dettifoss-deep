@@ -2,12 +2,14 @@
 # Pages: 0 Drones 1 Pitch 2 Life 3 Tone 4 Osc 5 Sub · Drive 6 LFO sends 7 Mods 8 Partner 9 Pitch moves
 # 10 Setup 1 11 Setup 2 12 Swell 13 Space 14 Details ("page V": page V at once, in no time).
 # the one-time tips (v0.3) aren't in the manual's pictures
+page 0
+niagara
 notips
 tap PLAY
 wait 1500
 shot play.png
 # Pitch: drone I resonant, drone II quieter (its level on Drones)
-tap HOME
+tap SEL+HOME
 expect view 1
 spin K2 50
 page 0
@@ -155,7 +157,7 @@ release SEL
 wait 1500
 shot fx2.png
 # SEL held: the black keys' map (the normal layer), drone I's Sub key touched
-tap HOME
+tap SEL+HOME
 wait 300
 press SEL
 wait 200
