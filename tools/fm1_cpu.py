@@ -49,7 +49,10 @@ def ask(link, cmd, body=b""):
         link.drain()
         link.send(q)
         t = time.monotonic() + 1.0
-        while (left := t - time.monotonic()) > 0:
+        while True:
+            left = t - time.monotonic()
+            if left <= 0:
+                break
             p = link.read(left)
             d = p and unpack7(p[1:-1])
             if d and len(d) >= 7 and d[:3] == bytes([0x00, 0x59, cmd]) and ~sum(d[6:-1]) & 0xFF == d[-1]:
@@ -70,7 +73,10 @@ def cores(link, test=None):
             link.drain()
             link.send(q)
             t = time.monotonic() + 1.0
-            while (left := t - time.monotonic()) > 0:
+            while True:
+                left = t - time.monotonic()
+                if left <= 0:
+                    break
                 p = link.read(left)
                 d = p and unpack7(p[1:-1])
                 if d and len(d) == 39 and d[:3] == bytes([0x00, 0x59, cmd]) and ~sum(d[6:38]) & 0xFF == d[38]:
@@ -122,7 +128,10 @@ def main():
             link.drain()
             link.send(QUERY)
             t = time.monotonic() + 1.0
-            while (left := t - time.monotonic()) > 0:
+            while True:
+                left = t - time.monotonic()
+                if left <= 0:
+                    break
                 p = link.read(left)
                 r = p and parse(p)
                 if r:
