@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the lead's three sounds, a Preset's each (P1 Swell, P2 Glass, P3
+# Reed), on the progression page over a chord at Snap 80: a short phrase, then a long note pressed harder and back
+# (brighter, more vibrato). Not a test of its own.
+notips
+tap PLAY
+wait 1500
+tap HOME
+turn ALGO 80
+wait 600
+tapkey 0
+wait 1500
+wav lead-swell.wav
+tapkey 9
+wait 300
+key 11 down
+wait 700
+key 11 up
+key 14 down
+wait 1500
+pressure 14 40
+wait 300
+pressure 14 90
+wait 300
+pressure 14 127
+wait 1200
+pressure 14 60
+wait 400
+pressure 14 0
+wait 600
+key 14 up
+wait 1500
+wavstop
+turn PRESET 1
+wait 9000
+wav lead-glass.wav
+tapkey 9
+wait 300
+key 11 down
+wait 700
+key 11 up
+key 14 down
+wait 1500
+pressure 14 40
+wait 300
+pressure 14 90
+wait 300
+pressure 14 127
+wait 1200
+pressure 14 60
+wait 400
+pressure 14 0
+wait 600
+key 14 up
+wait 1500
+wavstop
+turn PRESET 1
+wait 9000
+wav lead-reed.wav
+tapkey 9
+wait 300
+key 11 down
+wait 700
+key 11 up
+key 14 down
+wait 1500
+pressure 14 40
+wait 300
+pressure 14 90
+wait 300
+pressure 14 127
+wait 1200
+pressure 14 60
+wait 400
+pressure 14 0
+wait 600
+key 14 up
+wait 1500
+wavstop

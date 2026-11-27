@@ -29,7 +29,8 @@
  *                  While a chord rests the drones move to the next one's notes, so it comes in on them
  *   G5             BASS: the bass sounding held under the chords that follow, through rests too (lit), till tapped
  *                  again
- *   G3 .. F#5      the lead (a placeholder): one note at a time, the last key pressed; held notes glide
+ *   G3 .. F#5      the lead: one note at a time, the last key pressed; held notes glide; pressed harder,
+ *                  brighter, with more vibrato. Its sound is the Preset's: Swell, Glass, Reed
  *   OCT- / OCT+    the lead an octave down / up (-1 .. +1); the chords keep the Live page's octave
  *   the knobs, ALGORITHM, PRESETS   as on the Live page
  *
@@ -86,6 +87,7 @@ static struct {
     int8_t lnote;                              /* ... the note sounding or last sounded, MIDI */
     int8_t loct;                               /* ... its octave (OCT on the progression), -1 .. 1 */
     uint8_t preset;                            /* the PRESET encoder's last Preset (0 .. LV_NPRESET - 1) */
+    uint8_t lpress;                            /* the lead's key's pressure, as last sent */
 } lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, "", {0}, 0, 0, 0};
 
 /* THE THREE WAYS TO PLAY CHORDS (SEL on the Live page goes round them):
@@ -668,10 +670,19 @@ static void lk_live_card(int i, int32_t x, int32_t cx, int on)
         text_c(cx, 32 + (int32_t)fb->h, &FONT_U2, "semitones", LK_LABEL);
 }
 
-static void live_run(void)                     /* each frame: Dark-Bright's octave for the upper tones */
+static void live_run(void)                     /* each frame: the lead's pressure; Dark-Bright's octave for the
+                                                * upper tones */
 {
     const int d = proj.par[P_DARK];
     int r;
+    if (lv.prog && lv.nlead) {                 /* the lead's key pressed harder: brighter, more vibrato */
+        const int p = plat_pressure((uint32_t)lv.lead[lv.nlead - 1]);
+        if (p >= 0 && (p - lv.lpress > 1 || lv.lpress - p > 1)) {
+            lv.lpress = (uint8_t)p;
+            dr_lead_press(p);
+        }
+    } else
+        lv.lpress = 0;                         /* (let go, the engine's back at 0) */
     if (live_qr())                             /* (Q and R: Height places the tones) */
         return;
     r = d >= 50 ? 1 : d <= -50 ? -1 : (lv.reg > 0 && d > 40) || (lv.reg < 0 && d < -40) ? lv.reg : 0;

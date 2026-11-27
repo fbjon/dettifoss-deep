@@ -153,8 +153,8 @@ static const int16_t PRESET_CHANGES[][PRESET_N + 1] = {
 static const char *const PRESET_NAME[] = {"DETTIFOSS", "WIDE", "FELT", "DREAMHOUSE", "ABYSS", "NIAGARA", "SONAR", "SIBYL",
                                           "HOWL", "CISTERN", "PISTON", "ASHRAM", "TELEGRAPH", "TAPE", "FALLING", "BARE"};
 _Static_assert(sizeof PRESET_NAME / sizeof PRESET_NAME[0] == NPRESETS, "a name for each Preset");
-/* the pad Thickness brings in under a chord, a Preset's (fixed for now, not saved: a sound recalled from a bank keeps
- * the one before; drone.h's DR_PAD_KINDS) */
+/* the pad Thickness brings in under a chord and the lead's sound, a Preset's (one index for both, drone.h's
+ * DR_PAD_KINDS and DR_LEAD_KINDS; fixed for now, not saved: a sound recalled from a bank keeps the one before) */
 static const uint8_t PRESET_PAD[] = {0, 1, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0};
 _Static_assert(sizeof PRESET_PAD == NPRESETS, "a pad for each Preset");
 int preset_pad(int bank, int n)

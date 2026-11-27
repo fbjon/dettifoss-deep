@@ -697,6 +697,8 @@ void dr_chord_rest(int snap, int bass)       /* (go's: 2 a rest, 3 one keeping t
     post(C_CHORD_GO, snap < 0 ? 0 : snap > 100 ? 100 : snap, bass ? 3 : 2);
 }
 void dr_lead(int note_c, int gate) { post(C_LEAD, gate ? 1 : 0, note_c); }
+void dr_lead_kind(int kind) { post(C_LEAD, 2, kind < 0 || kind >= DR_LEAD_KINDS ? 0 : kind); }
+void dr_lead_press(int p) { post(C_LEAD, 3, p < 0 ? 0 : p > 127 ? 127 : p); }
 /* the pad path's (C_PAD: a = voice * 4 + what, or PAD_G + what for the whole path) */
 #define PAD_G (4 * DR_PAD_N)
 void dr_pad_voice(int i, int note_c, int pan, int level)
@@ -1011,13 +1013,35 @@ static struct {
 } cr = {1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0, 0, 0, 0};
 #define CH_REST_TAKE 0.3f                        /* how quiet before the notes move to the next chord */
 #define CH_REST_GLIDE 300.0f                     /* ... and over how long, ms */
-/* THE LEAD (a placeholder to play over the progression): one note at a time, two saws 7 cents apart, one to each
- * side, each through a gentle low-pass that opens as the note swells and settles; held notes glide into each other
- * (~70 ms), and a vibrato grows in. Not part of the sound or the project yet: no parameters, nothing saved */
+/* THE LEAD (to play over the progression): one note at a time, two or three oscillators, each through its own gentle
+ * low-pass that opens as the note swells and settles; held notes glide into each other (~70 ms), and a vibrato grows
+ * in. A key's pressure opens the filters further and deepens the vibrato. Its kind is a Preset's (dr_lead_kind, as
+ * the pad's): not saved, no parameters yet */
 #define LD_LVL 0.25f
+#define LD_N 3
 typedef struct {
-    float note, pitch, amp, fpk, fenv, vib, vph, ph[2], ic1[2], ic2[2];
-    int gate;
+    uint8_t n, wave[LD_N];
+    float det[LD_N], gl[LD_N], gr[LD_N];        /* each oscillator: semitones from the note, its gains left, right */
+    float f0, fenv, k, att, rel, vib, vin;      /* the cutoff at C4 (Hz), the swell's octaves, 1 / Q; attack, release
+                                                 * (s); the vibrato (semitones) and how long it takes to grow in (s) */
+    float lvl;
+} ldkind_t;
+static const ldkind_t LD_KIND[DR_LEAD_KINDS] = {
+    /* 0: SWELL (P1's): two saws 7 cents apart, one to each side, brassy as the filter swells */
+    {2, {DR_SAW, DR_SAW, 0}, {-0.07f, 0.07f, 0.0f}, {0.8f, 0.2f, 0.0f}, {0.2f, 0.8f, 0.0f}, 420.0f, 2.7f, 1.25f, 0.1f,
+     0.45f, 0.13f, 0.9f, 1.0f},
+    /* 1: GLASS (Wide's): two saws 12 cents apart at the far sides and a triangle an octave up in the middle; brighter,
+     * a shorter swell, a longer release */
+    {3, {DR_SAW, DR_SAW, DR_TRI}, {-0.12f, 0.12f, 12.0f}, {0.95f, 0.05f, 0.5f}, {0.05f, 0.95f, 0.5f}, 700.0f, 1.6f,
+     1.1f, 0.06f, 0.8f, 0.1f, 1.2f, 0.45f},
+    /* 2: REED (Felt's): a triangle with a sine an octave over it, soft and slow to speak, the vibrato sooner */
+    {2, {DR_TRI, DR_SINE, 0}, {0.0f, 12.0f, 0.0f}, {0.6f, 0.3f, 0.0f}, {0.4f, 0.5f, 0.0f}, 500.0f, 1.2f, 0.9f, 0.18f,
+     0.6f, 0.18f, 0.5f, 0.64f},
+};
+typedef struct {
+    float note, pitch, amp, fpk, fenv, vib, vph, ph[LD_N], ic1[LD_N], ic2[LD_N];
+    float press, prt;                           /* the key's pressure 0 .. 1, gliding to prt */
+    int gate, kind;
 } ld_t;
 static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): written by the core that renders it,
                                                 * by this one only while no block is handed over (drain) */
@@ -2001,6 +2025,14 @@ static void drain(void)
                 grp[a].gtarget = b ? 1.0f : 0.0f;
             break;
         case C_LEAD:
+            if (a == 2) {                      /* the kind */
+                ld.kind = b;
+                break;
+            }
+            if (a == 3) {                      /* the pressure */
+                ld.prt = (float)b * (1.0f / 127.0f);
+                break;
+            }
             if (a && !ld.gate && ld.amp < 0.01f) {   /* from silence: the pitch there at once, the swell anew */
                 ld.pitch = (float)b * 0.01f;
                 ld.vib = 0.0f;
@@ -2009,6 +2041,7 @@ static void drain(void)
                 ld.fpk = 1.0f;                 /* a new phrase opens the filter; a legato note doesn't */
             ld.note = (float)b * 0.01f;
             ld.gate = a;
+            ld.prt = a ? ld.prt : 0.0f;
             break;
         case C_PAD:
             if (a < PAD_G) {
@@ -3317,6 +3350,8 @@ void dr_pad_hooks(int (*hand)(void), int (*wait)(void))
 
 static __attribute__((noinline)) void lead_run(uint32_t n)             /* into padl / padr: it plays stopped too */
 {
+    const ldkind_t *K = &LD_KIND[ld.kind];
+    const int no = K->n;
     uint32_t j0, j;
     int i;
     if (!ld.gate && ld.amp <= 0.0f)
@@ -3324,40 +3359,42 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into p
     for (j0 = 0; j0 < n; j0 += CR) {
         const uint32_t je = j0 + CR < n ? j0 + CR : n;
         const float dt = (float)(je - j0) * (1.0f / DR_SR);
-        float a = ld.amp, da, vib, fc, g, a1, a2, a3, inc[2];
-        const float k = 1.25f;                 /* a little resonance */
+        float a = ld.amp, da, vib, fc, g, a1, a2, a3, inc[LD_N];
+        const float k = K->k;
         ld.pitch += (ld.note - ld.pitch) * fm_minf(dt * (1.0f / 0.07f), 1.0f);
-        ld.vib = ld.gate ? fm_minf(ld.vib + dt * (1.0f / 0.9f), 1.0f) : ld.vib;
+        ld.vib = ld.gate ? fm_minf(ld.vib + dt * (1.0f / K->vin), 1.0f) : ld.vib;
+        ld.press += (ld.prt - ld.press) * fm_minf(dt * (1.0f / 0.05f), 1.0f);
         ld.vph += 5.2f * dt;
         ld.vph -= ld.vph >= 1.0f ? 1.0f : 0.0f;
-        vib = 0.13f * ld.vib * ld.vib * fm_sinf(2.0f * FM_PI * ld.vph);   /* up to +-13 cents */
+        vib = (K->vib * ld.vib * ld.vib + 0.25f * ld.press) * fm_sinf(2.0f * FM_PI * ld.vph);   /* pressed: +25 c */
         ld.fpk += (0.45f - ld.fpk) * fm_minf(dt * (1.0f / 1.6f), 1.0f);   /* the swell settling */
         ld.fenv += ((ld.gate ? ld.fpk : 0.0f) - ld.fenv) * fm_minf(dt * (ld.gate ? 1.0f / 0.22f : 1.0f / 0.6f), 1.0f);
-        ld.amp = ld.gate ? ld.amp + (1.0f - ld.amp) * fm_minf(dt * (1.0f / 0.1f), 1.0f)
-                         : fm_maxf(ld.amp - ld.amp * dt * (1.0f / 0.45f) - 1e-5f, 0.0f);
+        ld.amp = ld.gate ? ld.amp + (1.0f - ld.amp) * fm_minf(dt * (1.0f / K->att), 1.0f)
+                         : fm_maxf(ld.amp - ld.amp * dt * (1.0f / K->rel) - 1e-5f, 0.0f);
         da = (ld.amp - a) * (1.0f / (float)CR);
-        fc = 420.0f * fm_exp2f(2.7f * ld.fenv + (ld.pitch - 60.0f) * (1.0f / 24.0f));
+        fc = K->f0 * fm_exp2f(K->fenv * ld.fenv + (ld.pitch - 60.0f) * (1.0f / 24.0f) + 1.5f * ld.press);
         g = fm_tanf(FM_PI * fm_minf(fc, 0.4f * DR_SR) * (1.0f / DR_SR));
         a1 = 1.0f / (1.0f + g * (g + k));
         a2 = g * a1;
         a3 = g * a2;
-        inc[0] = note_inc(ld.pitch + vib - 0.07f);
-        inc[1] = note_inc(ld.pitch + vib + 0.07f);
+        for (i = 0; i < no; i++)
+            inc[i] = note_inc(ld.pitch + vib + K->det[i]);
         for (j = j0; j < je; j++) {
-            float y[2];
-            for (i = 0; i < 2; i++) {
-                const float x = xosc(DR_SAW, 0.0f, ld.ph[i], inc[i], 0.5f), v3 = x - ld.ic2[i];
+            float l = 0.0f, r = 0.0f;
+            for (i = 0; i < no; i++) {
+                const float x = xosc(K->wave[i], 0.0f, ld.ph[i], inc[i], 0.5f), v3 = x - ld.ic2[i];
                 const float v1 = a1 * ld.ic1[i] + a2 * v3, v2 = ld.ic2[i] + a2 * ld.ic1[i] + a3 * v3;
                 ld.ic1[i] = 2.0f * v1 - ld.ic1[i];
                 ld.ic2[i] = 2.0f * v2 - ld.ic2[i];
                 ld.ph[i] = advance(ld.ph[i], inc[i]);
-                y[i] = v2;
+                l = i ? l + K->gl[i] * v2 : K->gl[i] * v2;
+                r = i ? r + K->gr[i] * v2 : K->gr[i] * v2;
             }
             a += da;
-            padl[j] += a * LD_LVL * (0.8f * y[0] + 0.2f * y[1]);
-            padr[j] += a * LD_LVL * (0.2f * y[0] + 0.8f * y[1]);
+            padl[j] += a * (LD_LVL * K->lvl) * l;
+            padr[j] += a * (LD_LVL * K->lvl) * r;
         }
-        for (i = 0; i < 2; i++) {
+        for (i = 0; i < no; i++) {
             ld.ic1[i] = fm_flush(ld.ic1[i]);
             ld.ic2[i] = fm_flush(ld.ic2[i]);
         }
