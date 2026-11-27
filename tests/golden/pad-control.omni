@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the pad path's filter under the live macros, over a held chord at
+# Thickness 60: Dark down (closed 2.5 octaves), back, up (opened); then Motion down (the LFO's sweep still) and up
+# (+-12 semitones). Not a test of its own.
+notips
+tap PLAY
+wait 1500
+tap HOME
+turn ALGO 80
+set 87 60
+wait 600
+tapkey 0
+wait 1500
+wav pad-control.wav
+wait 3000
+set 86 -100 1500
+wait 4000
+set 86 0 1500
+wait 3000
+set 86 100 1500
+wait 4000
+set 86 0 1500
+wait 2000
+set 88 -100
+wait 5000
+set 88 100
+wait 8000
+wavstop

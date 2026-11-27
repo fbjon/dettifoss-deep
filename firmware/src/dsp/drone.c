@@ -1026,6 +1026,7 @@ static struct {
     pv_t v[DR_PAD_N];
     float att, rel;                             /* per second: 1 / the time */
     float fc, fct, k, s1[2], s2[2];             /* the filter: its cutoff (a note) gliding to fct, 1 / Q, states */
+    float fco;                                  /* ... moved by Dark and the LFO (pad_follow), semitones */
     int live;
 } pv __attribute__((aligned(32)));
 static uint8_t padc_bank, padc_on;               /* Thickness's pad (pad_chord): the half sounding, whether it plays */
@@ -1040,7 +1041,7 @@ static void pv_reset(void)
     }
     pv.att = 1.0f / 0.3f;
     pv.rel = 1.0f / 1.2f;
-    pv.fc = pv.fct = 96.0f;                     /* ~1 kHz */
+    pv.fc = pv.fct = 96.0f;                     /* ~2 kHz */
     pv.k = 1.4f;
     pv.s1[0] = pv.s1[1] = pv.s2[0] = pv.s2[1] = 0.0f;
     pv.live = 0;
@@ -3318,7 +3319,7 @@ static __attribute__((noinline)) void pv_run(uint32_t n)
             }
             v->ph = ph;
         }
-        pv.fc += (pv.fct - pv.fc) * fm_minf(dt * (1.0f / 0.03f), 1.0f);   /* a cutoff glides (30 ms) */
+        pv.fc += (pv.fct + pv.fco - pv.fc) * fm_minf(dt * (1.0f / 0.03f), 1.0f);   /* a cutoff glides (30 ms) */
         fc = 440.0f * fm_exp2f((pv.fc - 69.0f) * (1.0f / 12.0f));
         g = fm_tanf(FM_PI * fm_minf(fc, 0.4f * DR_SR) * (1.0f / DR_SR));
         a1 = 1.0f / (1.0f + g * (g + pv.k));
@@ -3352,6 +3353,16 @@ void dr_pad_run(void)
     lead_run(pad_k);                             /* the lead after the pad's filter: its own two */
 }
 
+/* the pad's filter follows the live macros (here, before the hand-over: a block's lag, under its 30 ms glide): DARK
+ * closes it up to 2.5 octaves, or opens it 1.5; the LFO's first wave sweeps it, +-4 semitones, to +-12 with MOTION up
+ * and still with it down */
+static void pad_follow(void)
+{
+    const float dk = (float)base[P_DARK] * 0.01f, mo = (float)base[P_MOTION] * 0.01f;
+    const float depth = mo >= 0.0f ? 4.0f + 8.0f * mo : 4.0f * (1.0f + mo);
+    pv.fco = (dk < 0.0f ? 30.0f : 18.0f) * dk + depth * lfo_s[0];
+}
+
 void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
 {
     /* MASTER: a volume up to 4/5 of its turn (there as loud as the old full turn); past that it drives the
@@ -3369,6 +3380,7 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
         float frate = fade_rate();
         if (ld.gate || ld.amp > 0.0f || pv.live) {
             pad_k = k;
+            pad_follow();
             pad = pad_hand ? pad_hand() : 0;
             pad_voices = pad >= 0;
             pad = pad == 1 ? 2 : 1;              /* 2 elsewhere, 1 here */
