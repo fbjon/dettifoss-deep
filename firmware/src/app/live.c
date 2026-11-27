@@ -32,7 +32,7 @@
  *
  * SEL + HOME, on either, opens Niagara Drift's Drones and Pitch pages (again: the other), till the sound has its own.
  *
- * For now the progression is the demo's: C, Am, Fmaj7, G7, C. Part of ui.c's unity build (after look.c) */
+ * For now the progression is the demo's: C, Am, Fmmaj7, Gm7, Cm7. Part of ui.c's unity build (after look.c) */
 
 enum { LM_MIN, LM_SUS2, LM_SUS4, LM_7, LM_MAJ7, LM_ADD9, LM_N };
 static const char *const LV_MOD_NAME[LM_N] = {"m", "sus2", "sus4", "7", "maj7", "add9"};
@@ -44,7 +44,8 @@ static const char *const LV_PC[12] = {"C", "Db", "D", "Eb", "E", "F", "F#", "G",
 #define PG_NEXT 0                              /* F3 */
 #define PG_PREV 1                              /* F#3 */
 typedef struct { int8_t root; uint8_t mods; } pg_chord_t;
-static const pg_chord_t PG_DEMO[] = {{7, 0}, {4, 1u << LM_MIN}, {0, 1u << LM_MAJ7}, {2, 1u << LM_7}, {7, 0}};
+static const pg_chord_t PG_DEMO[] = {{7, 0}, {4, 1u << LM_MIN}, {0, 1u << LM_MIN | 1u << LM_MAJ7}, {2, 1u << LM_MIN | 1u << LM_7},
+                                     {7, 1u << LM_MIN | 1u << LM_7}};
 #define PG_N ((int)(sizeof PG_DEMO / sizeof PG_DEMO[0]))
 
 static struct {
