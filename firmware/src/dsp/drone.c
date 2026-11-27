@@ -657,7 +657,7 @@ void dr_param_text(int i, int v, char *b)
 }
 
 /* -------------------------------------------------------------- commands --- */
-enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO, C_LEAD };
+enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO, C_LEAD, C_PAD };
 /* a load (boot, project_apply) posts every value at once, before the render drains any: the queue holds
  * them all (at 64 the last values of a saved sound were dropped at start-up, the macros among them) */
 #define QN 128u
@@ -697,6 +697,26 @@ void dr_chord_rest(int snap, int bass)       /* (go's: 2 a rest, 3 one keeping t
     post(C_CHORD_GO, snap < 0 ? 0 : snap > 100 ? 100 : snap, bass ? 3 : 2);
 }
 void dr_lead(int note_c, int gate) { post(C_LEAD, gate ? 1 : 0, note_c); }
+/* the pad path's (C_PAD: a = voice * 4 + what, or PAD_G + what for the whole path) */
+#define PAD_G (4 * DR_PAD_N)
+void dr_pad_voice(int i, int note_c, int pan, int level)
+{
+    if (i < 0 || i >= DR_PAD_N)
+        return;
+    post(C_PAD, i * 4 + 0, note_c);
+    post(C_PAD, i * 4 + 1, pan < -100 ? -100 : pan > 100 ? 100 : pan);
+    post(C_PAD, i * 4 + 2, level < 0 ? 0 : level > 100 ? 100 : level);
+}
+void dr_pad_env(int attack_ms, int release_ms)
+{
+    post(C_PAD, PAD_G + 0, attack_ms < 1 ? 1 : attack_ms > 30000 ? 30000 : attack_ms);
+    post(C_PAD, PAD_G + 1, release_ms < 1 ? 1 : release_ms > 30000 ? 30000 : release_ms);
+}
+void dr_pad_filter(int cutoff_c, int reso)
+{
+    post(C_PAD, PAD_G + 2, cutoff_c);
+    post(C_PAD, PAD_G + 3, reso < 0 ? 0 : reso > 100 ? 100 : reso);
+}
 
 /* ----------------------------------------------------------------- state --- */
 volatile float dr_level[DR_NGROUPS];
@@ -995,6 +1015,34 @@ typedef struct {
 } ld_t;
 static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): written by the core that renders it,
                                                 * by this one only while no block is handed over (drain) */
+/* THE PAD PATH'S VOICES (drone.h): set by drain, the rest by the core that renders them. pv_live: how many sound,
+ * as the last block left them (or a level just set), read here at the next block's start */
+#define PV_GAIN 0.12f                          /* a voice at level 100, before its pan */
+typedef struct {
+    float ph, note, gl, gr, lvl, amp;           /* gl, gr: the pan's gains; lvl: the level it goes to */
+} pv_t;
+static struct {
+    pv_t v[DR_PAD_N];
+    float att, rel;                             /* per second: 1 / the time */
+    float fc, fct, k, s1[2], s2[2];             /* the filter: its cutoff (a note) gliding to fct, 1 / Q, states */
+    int live;
+} pv __attribute__((aligned(32)));
+static void pv_reset(void)
+{
+    static const pv_t none;
+    int i;
+    for (i = 0; i < DR_PAD_N; i++) {
+        pv.v[i] = none;
+        pv.v[i].gl = pv.v[i].gr = 0.70710678f;
+        pv.v[i].note = 60.0f;
+    }
+    pv.att = 1.0f / 0.3f;
+    pv.rel = 1.0f / 1.2f;
+    pv.fc = pv.fct = 96.0f;                     /* ~1 kHz */
+    pv.k = 1.4f;
+    pv.s1[0] = pv.s1[1] = pv.s2[0] = pv.s2[1] = 0.0f;
+    pv.live = 0;
+}
 
 void dr_init(void)
 {
@@ -1005,6 +1053,7 @@ void dr_init(void)
         static const ld_t none;
         ld = none;
     }
+    pv_reset();
     mac_p[0] = mac_p[1] = mac_gp[0] = mac_gp[1] = 0.0f;
     macro_reset();
     for (i = 0; i < DR_NPARAMS; i++) {
@@ -1804,10 +1853,36 @@ static void drain(void)
             ld.note = (float)b * 0.01f;
             ld.gate = a;
             break;
+        case C_PAD:
+            if (a < PAD_G) {
+                pv_t *v = &pv.v[a >> 2];
+                if ((a & 3) == 0)
+                    v->note = (float)b * 0.01f;
+                else if ((a & 3) == 1) {
+                    const float t = (float)(b + 100) * (FM_PI * 0.25f / 100.0f);   /* 0 .. pi / 2 */
+                    v->gl = fm_cosf(t);
+                    v->gr = fm_sinf(t);
+                } else if ((a & 3) == 2) {
+                    v->lvl = (float)b * 0.01f;
+                    if (b)
+                        pv.live = 1;
+                }
+            } else if (a == PAD_G + 0)
+                pv.att = 1000.0f / (float)b;
+            else if (a == PAD_G + 1)
+                pv.rel = 1000.0f / (float)b;
+            else if (a == PAD_G + 2)
+                pv.fct = (float)b * 0.01f;
+            else if (a == PAD_G + 3)
+                pv.k = 2.0f - 1.85f * (float)b * 0.01f;   /* Q 0.5 .. ~6.7 */
+            break;
         case C_PANIC: {
             int g;
             ld.gate = 0;
             ld.amp = 0.0f;
+            for (g = 0; g < DR_PAD_N; g++)
+                pv.v[g].lvl = pv.v[g].amp = 0.0f;
+            pv.live = 0;
             fx_clear();                          /* silence now: the echoes and the tail too */
             fade = fade_target = 0.0f;
             for (g = 0; g < DR_NGROUPS; g++)
@@ -3121,12 +3196,70 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into p
     }
 }
 
+/* the voices into padl / padr, then the stereo low-pass (one set of coefficients, two states) */
+static __attribute__((noinline)) void pv_run(uint32_t n)
+{
+    uint32_t j0, j;
+    int i, live = 0;
+    if (!pv.live)
+        return;
+    for (j0 = 0; j0 < n; j0 += CR) {
+        const uint32_t je = j0 + CR < n ? j0 + CR : n;
+        const float dt = (float)(je - j0) * (1.0f / DR_SR), inv = 1.0f / (float)(je - j0);
+        float fc, g, a1, a2, a3;
+        live = 0;
+        for (i = 0; i < DR_PAD_N; i++) {
+            pv_t *v = &pv.v[i];
+            float a = v->amp, da, inc, ph, gl, gr;
+            if (v->lvl <= 0.0f && a <= 0.0f)
+                continue;
+            live++;
+            v->amp = v->lvl > a ? a + (v->lvl - a) * fm_minf(dt * pv.att, 1.0f)
+                                : fm_maxf(a - (a - v->lvl) * fm_minf(dt * pv.rel, 1.0f) - 1e-5f, v->lvl);
+            da = (v->amp - a) * inv;
+            inc = note_inc(v->note);
+            ph = v->ph;
+            gl = v->gl * PV_GAIN;
+            gr = v->gr * PV_GAIN;
+            for (j = j0; j < je; j++) {
+                const float x = xosc(DR_SAW, 0.0f, ph, inc, 0.5f);
+                a += da;
+                ph = advance(ph, inc);
+                padl[j] += a * gl * x;
+                padr[j] += a * gr * x;
+            }
+            v->ph = ph;
+        }
+        pv.fc += (pv.fct - pv.fc) * fm_minf(dt * (1.0f / 0.03f), 1.0f);   /* a cutoff glides (30 ms) */
+        fc = 440.0f * fm_exp2f((pv.fc - 69.0f) * (1.0f / 12.0f));
+        g = fm_tanf(FM_PI * fm_minf(fc, 0.4f * DR_SR) * (1.0f / DR_SR));
+        a1 = 1.0f / (1.0f + g * (g + pv.k));
+        a2 = g * a1;
+        a3 = g * a2;
+        for (i = 0; i < 2; i++) {
+            float *x = i ? padr : padl, s1 = pv.s1[i], s2 = pv.s2[i];
+            for (j = j0; j < je; j++) {
+                const float v3 = x[j] - s2, v1 = a1 * s1 + a2 * v3, v2 = s2 + a2 * s1 + a3 * v3;
+                s1 = 2.0f * v1 - s1;
+                s2 = 2.0f * v2 - s2;
+                x[j] = v2;
+            }
+            pv.s1[i] = fm_flush(s1);
+            pv.s2[i] = fm_flush(s2);
+        }
+    }
+    pv.live = live;
+    if (!live)
+        pv.s1[0] = pv.s1[1] = pv.s2[0] = pv.s2[1] = 0.0f;   /* (its tail is under the voices' release) */
+}
+
 void dr_pad_run(void)
 {
     uint32_t j;
     for (j = 0; j < pad_k; j++)
         padl[j] = padr[j] = 0.0f;
-    lead_run(pad_k);
+    pv_run(pad_k);
+    lead_run(pad_k);                             /* the lead after the pad's filter: its own two */
 }
 
 void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
@@ -3144,7 +3277,7 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
         uint32_t k = n > BLK ? BLK : n, j;
         int g, pad = 0;                          /* the pad path: off, handed over (1), here (0 .. as hand()) */
         float frate = fade_rate();
-        if (ld.gate || ld.amp > 0.0f) {
+        if (ld.gate || ld.amp > 0.0f || pv.live) {
             pad_k = k;
             pad = pad_hand ? pad_hand() : 0;
             pad = pad == 1 ? 2 : pad == 0 ? 1 : 0;   /* 2 elsewhere, 1 here, 0 silent */
@@ -3203,7 +3336,7 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
         /* the effects, after the fade: the tails ring on when stopped. Stopped, and silent (below -120 dB)
          * for longer than the delay's line (743 ms: an echo still in it would have come out by then), they
          * rest until PLAY */
-        if (fade > 0.0f || fade_target > 0.0f || fx_quiet < 160u || ld.gate || ld.amp > 0.0f) {
+        if (fade > 0.0f || fade_target > 0.0f || fx_quiet < 160u || ld.gate || ld.amp > 0.0f || pv.live) {
             float pk = 0.0f;
             DR_FAR(fx_run)(mixl, mixr, k);
             clean_hold(mixl, mixr, k);
