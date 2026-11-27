@@ -993,7 +993,8 @@ typedef struct {
     float note, pitch, amp, fpk, fenv, vib, vph, ph[2], ic1[2], ic2[2];
     int gate;
 } ld_t;
-static ld_t ld;
+static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): written by the core that renders it,
+                                                * by this one only while no block is handed over (drain) */
 
 void dr_init(void)
 {
@@ -3060,7 +3061,18 @@ static void clean_hold(float *l, float *r, uint32_t k)
         }
 }
 
-static __attribute__((noinline)) void lead_run(uint32_t n)             /* into mixl / mixr, after the PLAY fade: it plays stopped too */
+/* the pad path's block: the samples this core takes after the wait (written by the core that renders it) */
+static float padl[BLK] __attribute__((aligned(32))), padr[BLK] __attribute__((aligned(32)));
+static uint32_t pad_k;                           /* the block's length, set before the hand-over */
+static int (*pad_hand)(void), (*pad_wait)(void);
+
+void dr_pad_hooks(int (*hand)(void), int (*wait)(void))
+{
+    pad_hand = hand;
+    pad_wait = wait;
+}
+
+static __attribute__((noinline)) void lead_run(uint32_t n)             /* into padl / padr: it plays stopped too */
 {
     uint32_t j0, j;
     int i;
@@ -3099,14 +3111,22 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into m
                 y[i] = v2;
             }
             a += da;
-            mixl[j] += a * LD_LVL * (0.8f * y[0] + 0.2f * y[1]);
-            mixr[j] += a * LD_LVL * (0.2f * y[0] + 0.8f * y[1]);
+            padl[j] += a * LD_LVL * (0.8f * y[0] + 0.2f * y[1]);
+            padr[j] += a * LD_LVL * (0.2f * y[0] + 0.8f * y[1]);
         }
         for (i = 0; i < 2; i++) {
             ld.ic1[i] = fm_flush(ld.ic1[i]);
             ld.ic2[i] = fm_flush(ld.ic2[i]);
         }
     }
+}
+
+void dr_pad_run(void)
+{
+    uint32_t j;
+    for (j = 0; j < pad_k; j++)
+        padl[j] = padr[j] = 0.0f;
+    lead_run(pad_k);
 }
 
 void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
@@ -3122,8 +3142,13 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
         macro_apply(n);
     while (n) {
         uint32_t k = n > BLK ? BLK : n, j;
-        int g;
+        int g, pad = 0;                          /* the pad path: off, handed over (1), here (0 .. as hand()) */
         float frate = fade_rate();
+        if (ld.gate || ld.amp > 0.0f) {
+            pad_k = k;
+            pad = pad_hand ? pad_hand() : 0;
+            pad = pad == 1 ? 2 : pad == 0 ? 1 : 0;   /* 2 elsewhere, 1 here, 0 silent */
+        }
         for (j = 0; j < k; j++)
             mixl[j] = mixr[j] = 0.0f;
         pf_run(k);
@@ -3166,7 +3191,15 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
             mixl[j] *= a;
             mixr[j] *= a;
         }
-        lead_run(k);
+        if (pad == 2 && pad_wait() != 0)
+            pad = 0;                             /* dropped: silent this block */
+        else if (pad == 1)
+            dr_pad_run();
+        if (pad)
+            for (j = 0; j < k; j++) {
+                mixl[j] += padl[j];
+                mixr[j] += padr[j];
+            }
         /* the effects, after the fade: the tails ring on when stopped. Stopped, and silent (below -120 dB)
          * for longer than the delay's line (743 ms: an echo still in it would have come out by then), they
          * rest until PLAY */

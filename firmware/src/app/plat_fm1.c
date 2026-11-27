@@ -33,7 +33,7 @@ int32_t plat_enc(int role)
     return fm1_enc_take(panel.enc[role]) * panel.dir[role];
 }
 
-static volatile uint32_t master_q12 = 2048, master_k10;   /* the level, and the pot's turn 0 .. 1023 */
+static volatile uint32_t master_q12, master_k10;   /* the level (silent until the pot is first read), the pot's turn 0 .. 1023 */
 
 /* REMOTE: the panel played into the emulator on a computer (web/emu), for trying a build without flashing it.
  * The page sends its lights over USB-MIDI, when they change and at least twice a second; while it does, the FM-1's own

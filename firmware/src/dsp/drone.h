@@ -295,6 +295,15 @@ void dr_lead(int note_c, int gate);           /* the placeholder lead: a note (M
 /* the render (audio ISR): n stereo frames, 24-bit in int32; gain Q12 (the MASTER pot) */
 void dr_render(int32_t *out_lr, uint32_t n, uint32_t gain_q12);
 
+/* THE PAD PATH: a stereo layer (today the lead) that another core can render while this one renders the drones; it is
+ * mixed in after the PLAY fade, before the effects. dr_render hands it over each block it sounds in, after the
+ * commands are drained, and waits for it before the effects:
+ *   hand()   1 = taken (render elsewhere: dr_pad_run, once); 0 = render it here; -1 = silent this block
+ *   wait()   0 = done; else dropped (silent this block)
+ * With no hooks (the host, the emulator) it renders in place, at the same point, so the samples are the same */
+void dr_pad_hooks(int (*hand)(void), int (*wait)(void));
+void dr_pad_run(void);                         /* the block's pad path, on whichever core took it */
+
 /* state for the screen (UI) */
 extern volatile float dr_level[DR_NGROUPS];    /* each drone's output level, 0..~1 (peak, decaying) */
 extern volatile float dr_fade;                 /* the PLAY fade, 0..1 */
