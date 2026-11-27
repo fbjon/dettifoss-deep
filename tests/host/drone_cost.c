@@ -132,7 +132,7 @@ static const char *const names[] = {
     "the same, the live macros up (Motion breathing)",
     "the same, a pad's change every 0.25 s (bridge voices full)",
     "the same, the lead held (two saws, two filters)",
-    "the pad path alone: 16 voices, its filter, the lead",
+    "the pad path alone: 48 voices, its filter, the lead",
 };
 #define NCASES ((int)(sizeof names / sizeof names[0]))
 

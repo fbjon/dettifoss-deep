@@ -1200,6 +1200,8 @@ static void scene_recall(int n, int keep)              /* a white key: morph the
     }
     if (keep)
         undo_keep();
+    if (preset_pad(proj.bank, n) >= 0)
+        dr_pad_kind(preset_pad(proj.bank, n));
     for (k = 0; k < DR_NPARAMS; k++) {
         ui.morph_from[k] = proj.par[k];
         ui.morph_to[k] = sc[k];
@@ -1221,6 +1223,8 @@ static void scene_play(int bank, int n)
     int k;
     if (!sc)
         return;
+    if (preset_pad(bank, n) >= 0)
+        dr_pad_kind(preset_pad(bank, n));
     for (k = 0; k < DR_NPARAMS; k++) {
         ui.morph_from[k] = proj.par[k];
         ui.morph_to[k] = sc[k];

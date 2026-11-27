@@ -707,6 +707,12 @@ void dr_pad_voice(int i, int note_c, int pan, int level)
     post(C_PAD, i * 4 + 1, pan < -100 ? -100 : pan > 100 ? 100 : pan);
     post(C_PAD, i * 4 + 2, level < 0 ? 0 : level > 100 ? 100 : level);
 }
+void dr_pad_wave(int i, int wave)
+{
+    if (i >= 0 && i < DR_PAD_N)
+        post(C_PAD, i * 4 + 3, wave < DR_SINE ? DR_SINE : wave > DR_SAW ? DR_SAW : wave);
+}
+void dr_pad_kind(int kind) { post(C_PAD, PAD_G + 4, kind < 0 || kind >= DR_PAD_KINDS ? 0 : kind); }
 void dr_pad_env(int attack_ms, int release_ms)
 {
     post(C_PAD, PAD_G + 0, attack_ms < 1 ? 1 : attack_ms > 30000 ? 30000 : attack_ms);
@@ -1021,6 +1027,7 @@ static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): w
 typedef struct {
     float ph, note, gl, gr, lvl, amp;           /* gl, gr: the pan's gains; lvl: the level it goes to */
     float nt, ns;                               /* a glide: the note it goes to, semitones a second (0: there) */
+    int wave;                                   /* DR_SINE .. DR_SAW */
 } pv_t;
 static struct {
     pv_t v[DR_PAD_N];
@@ -1038,6 +1045,7 @@ static void pv_reset(void)
         pv.v[i] = none;
         pv.v[i].gl = pv.v[i].gr = 0.70710678f;
         pv.v[i].note = 60.0f;
+        pv.v[i].wave = DR_SAW;
     }
     pv.att = 1.0f / 0.3f;
     pv.rel = 1.0f / 1.2f;
@@ -1665,10 +1673,39 @@ static float snap_rel(int s) { return s < DR_SNAP_LEGATO ? 1.5f : s < DR_SNAP_PA
 /* THICKNESS UP, UNDER A CHORD: the pad path doubles its tones, each as a pair detuned and spread apart (the bass one
  * voice, centred); the more Thickness, the wider and the louder. A change's new notes come in on the other half of
  * the voices while the old ones release, so changes overlap. Thickness at 0 or under: no pad */
-#define PADC_N 7                                 /* a chord's voices: the bass, and a pair for each of three tones */
-static void pad_voice_set(int i, float note, float pan, float lvl, float glide)   /* (from drain) glide: s, 0 a jump */
+/* THE PAD'S KINDS (fixed for now, one a Preset: dr_pad_kind): a few sections, each a wave over some of the chord's
+ * tones (bit 0 the bass, 1-3 the tones over it), an octave, copies spread in pitch (cents d0 at Thickness 0 to
+ * d0 + dd at 100, as semitones) and across the sides, and a level; then the pad filter's cutoff and 1 / Q */
+#define PADC_HALF (DR_PAD_N / 2)                 /* a chord's voices: one half; a change comes in on the other */
+typedef struct {
+    uint8_t wave, tones, copies;
+    int8_t oct;
+    float d0, dd, lvl;
+} padsec_t;
+typedef struct {
+    padsec_t sec[4];
+    uint8_t n;
+    float fc, k;
+} padkind_t;
+static const padkind_t PAD_KIND[DR_PAD_KINDS] = {
+    /* 0: saws: the bass one, each other tone a pair */
+    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.7f}, {DR_SAW, 14, 2, 0, 0.04f, 0.08f, 1.0f}}, 2, 96.0f, 1.4f},
+    /* 1: WIDE SAWS (the synthesis recipes'): four saws a tone, an octave of triangles over the tones, a sine under
+     * the bass */
+    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.7f}, {DR_SAW, 14, 4, 0, 0.06f, 0.05f, 0.62f},
+      {DR_TRI, 14, 2, 1, 0.03f, 0.02f, 0.4f}, {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.8f}}, 4, 90.0f, 1.6f},
+    /* 2: FELT (the recipes' felt and air, its body): warm triangles, a pair a tone, a sine under the bass, the filter
+     * low */
+    {{{DR_TRI, 1, 1, 0, 0.0f, 0.0f, 0.4f}, {DR_TRI, 14, 2, 0, 0.04f, 0.03f, 0.55f},
+      {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.4f}}, 3, 81.0f, 1.8f},
+};
+static uint8_t pad_kind, padc_nv;                /* the kind; how many voices the sounding half has */
+static void pad_voice_set(int i, int wave, float note, float pan, float lvl, float glide)   /* (from drain) glide: s */
 {
     pv_t *v = &pv.v[i];
+    if (wave != v->wave && v->amp > 0.0f)       /* another wave on a sounding voice: it comes in anew */
+        glide = 0.0f;
+    v->wave = wave;
     const float t = (pan + 1.0f) * (FM_PI * 0.25f);
     if (glide > 0.0f && v->amp > 0.0f) {        /* sounding: it glides there */
         v->nt = note;
@@ -1685,29 +1722,45 @@ static void pad_voice_set(int i, float note, float pan, float lvl, float glide) 
 }
 static void pad_chord_set(float glide)          /* the sounding half's notes, spread and levels, as Thickness says */
 {
-    const float t = (float)par[P_THICK] * 0.01f, det = 0.04f + 0.08f * t, sp = 0.4f + 0.5f * t;
+    const padkind_t *pk = &PAD_KIND[pad_kind];
+    const float t = (float)par[P_THICK] * 0.01f, sp = 0.4f + 0.5f * t;
     const float lvl = fm_minf(0.5f + 0.5f * t, 1.0f);
-    const int v0 = padc_bank * (DR_PAD_N / 2);
-    float tone[3];
-    int k;
-    tone[0] = (float)(chs_main[0] + (chs_pon[0] ? chs_iv[0] : 0)) * 0.01f;
-    tone[1] = (float)chs_main[1] * 0.01f;
-    tone[2] = (float)(chs_main[1] + chs_iv[1]) * 0.01f;
-    pad_voice_set(v0, (float)chs_main[0] * 0.01f, 0.0f, lvl * 0.7f, glide);
-    for (k = 0; k < 3; k++) {
-        const float on = k == 0 && !chs_pon[0] ? 0.0f : k == 2 && !chs_pon[1] ? 0.0f : lvl;
-        pad_voice_set(v0 + 1 + 2 * k, tone[k] - det, -sp, on, glide);
-        pad_voice_set(v0 + 2 + 2 * k, tone[k] + det, sp, on, glide);
+    const int v0 = padc_bank * PADC_HALF;
+    float tone[4];
+    int on[4], k, i, c, n = 0;
+    tone[0] = (float)chs_main[0] * 0.01f;
+    tone[1] = (float)(chs_main[0] + (chs_pon[0] ? chs_iv[0] : 0)) * 0.01f;
+    tone[2] = (float)chs_main[1] * 0.01f;
+    tone[3] = (float)(chs_main[1] + chs_iv[1]) * 0.01f;
+    on[0] = on[2] = 1;
+    on[1] = chs_pon[0];
+    on[3] = chs_pon[1];
+    for (k = 0; k < pk->n; k++) {
+        const padsec_t *q = &pk->sec[k];
+        const float det = q->d0 + q->dd * t, l = q->lvl == 1.0f ? lvl : lvl * q->lvl;
+        for (i = 0; i < 4; i++) {
+            if (!(q->tones >> i & 1u))
+                continue;
+            for (c = 0; c < q->copies && n < PADC_HALF; c++, n++) {
+                const float o = q->copies > 1 ? (float)(2 * c) / (float)(q->copies - 1) - 1.0f : 0.0f;
+                pad_voice_set(v0 + n, q->wave, tone[i] + (float)(12 * q->oct) + o * det, o * sp, on[i] ? l : 0.0f,
+                              glide);
+            }
+        }
     }
+    for (k = n; k < padc_nv; k++)                /* (fewer than before: the rest released) */
+        pv.v[v0 + k].lvl = 0.0f;
+    padc_nv = (uint8_t)n;
 }
 static void pad_chord_off(float rel)             /* the sounding half released, over rel s (0: as it was) */
 {
     int k;
     if (rel > 0.0f)
         pv.rel = 1.0f / rel;
-    for (k = 0; k < PADC_N; k++)
-        pv.v[padc_bank * (DR_PAD_N / 2) + k].lvl = 0.0f;
+    for (k = 0; k < padc_nv; k++)
+        pv.v[padc_bank * PADC_HALF + k].lvl = 0.0f;
     padc_on = 0;
+    padc_nv = 0;
 }
 /* as Snap says: a wash or legato glides the sounding voices to the new notes (over the drones' time); a pad's change
  * brings them in on the other half over its attack while the old release over its own (snap_att, snap_brel) */
@@ -1956,7 +2009,8 @@ static void drain(void)
                     v->lvl = (float)b * 0.01f;
                     if (b)
                         pv.live = 1;
-                }
+                } else
+                    v->wave = b;
             } else if (a == PAD_G + 0)
                 pv.att = 1000.0f / (float)b;
             else if (a == PAD_G + 1)
@@ -1965,6 +2019,13 @@ static void drain(void)
                 pv.fct = (float)b * 0.01f;
             else if (a == PAD_G + 3)
                 pv.k = 2.0f - 1.85f * (float)b * 0.01f;   /* Q 0.5 .. ~6.7 */
+            else if (a == PAD_G + 4 && b != pad_kind) {
+                pad_kind = (uint8_t)b;
+                pv.fct = PAD_KIND[b].fc;
+                pv.k = PAD_KIND[b].k;
+                if (padc_on)
+                    pad_chord_set(0.0f);
+            }
             break;
         case C_PANIC: {
             int g;
@@ -3317,7 +3378,7 @@ static __attribute__((noinline)) void pv_run(uint32_t n)
             gl = v->gl * PV_GAIN;
             gr = v->gr * PV_GAIN;
             for (j = j0; j < je; j++) {
-                const float x = xosc(DR_SAW, 0.0f, ph, inc, 0.5f);
+                const float x = osc(v->wave, ph, inc, 0.5f);
                 a += da;
                 ph = advance(ph, inc);
                 padl[j] += a * gl * x;

@@ -17,6 +17,7 @@
  *   wav FILE | wavstop           start / stop recording the output
  *   chord G MAIN IV              drone G's chord notes: its main (MIDI x 100), its partner's interval (cents, "-" off)
  *   chordgo ON SNAP              both drones to their chord notes (1) or back to the sound (0), as Snap 0..100 says
+ *   padkind K                    the pad Thickness brings in: 0 saws, 1 Wide saws, 2 Felt (a Preset's, dr_pad_kind)
  *   peakreset                    restart the output peak (expect peak_db_min / peak_db_max)
  *   shot FILE.png                save the screen
  *   leds                         print the lit buttons and keys
@@ -701,6 +702,9 @@ int main(int argc, char **argv)
             run_ms(1);
         } else if (!strcmp(cmd, "chordgo")) {       /* chordgo ON SNAP: to the chord (1) or back to the sound (0) */
             dr_chord_go(atoi(a), atoi(b));
+            run_ms(1);
+        } else if (!strcmp(cmd, "padkind")) {       /* padkind K: the pad Thickness brings in (dr_pad_kind) */
+            dr_pad_kind(atoi(a));
             run_ms(1);
         } else if (!strcmp(cmd, "savecut")) {      /* savecut 1: a save cuts an audio block, as on the FM-1 */
             save_cut = atoi(a);

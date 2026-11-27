@@ -304,11 +304,16 @@ void dr_render(int32_t *out_lr, uint32_t n, uint32_t gain_q12);
  * With no hooks (the host, the emulator) it renders in place, at the same point, so the samples are the same */
 void dr_pad_hooks(int (*hand)(void), int (*wait)(void));
 void dr_pad_run(void);                         /* the block's pad path, on whichever core took it */
-/* its voices: DR_PAD_N band-limited saws, each a note (MIDI x 100, its detune in the cents), a pan (-100 left .. 100
- * right, equal power) and a level (0..100, 0: released); attack and release are the pad path's, in ms. They sum
- * into one stereo low-pass: a cutoff (MIDI x 100, as a note) and a resonance (0..100) */
-#define DR_PAD_N 16
+/* its voices: DR_PAD_N oscillators, each a wave (DR_SINE, DR_TRI, DR_SAW; band-limited), a note (MIDI x 100, its
+ * detune in the cents), a pan (-100 left .. 100 right, equal power) and a level (0..100, 0: released); attack and
+ * release are the pad path's, in ms. They sum into one stereo low-pass: a cutoff (MIDI x 100, as a note) and a
+ * resonance (0..100) */
+#define DR_PAD_N 48
 void dr_pad_voice(int i, int note_c, int pan, int level);
+void dr_pad_wave(int i, int wave);              /* (a saw until set) */
+/* the pad Thickness brings in under a chord: its kind (fixed for now, set with a Preset): 0 saws, 1 Wide saws, 2 Felt */
+#define DR_PAD_KINDS 3
+void dr_pad_kind(int kind);
 void dr_pad_env(int attack_ms, int release_ms);
 void dr_pad_filter(int cutoff_c, int reso);
 
