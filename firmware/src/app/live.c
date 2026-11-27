@@ -12,6 +12,8 @@
  *   OCT- / OCT+    the chords an octave down / up (-1 .. +1)
  *   KNOB 1-4       Dark-Bright, Thickness, Motion, Space (the live macros, a sound's)
  *   PRESETS        the sound: P1 DETTIFOSS, P2 WIDE, P3 FELT, each with its pad, gliding there; the knobs stay
+ *   ARP            a tap: the arp on / off (lit while on): the chord's tones an octave up, one at a time, while a
+ *                  chord sounds. Held, the knobs: Tempo (a MIDI clock wins), Division, Pattern, Length
  *   ALGORITHM      Snap: how a change lands: a wash (a slow glide) .. legato (a short one) .. a pad's attack
  *
  * A chord is a bass and three tones over it: drone I's main note the bass, its partner the fifth, drone II's main
@@ -88,7 +90,9 @@ static struct {
     int8_t loct;                               /* ... its octave (OCT on the progression), -1 .. 1 */
     uint8_t preset;                            /* the PRESET encoder's last Preset (0 .. LV_NPRESET - 1) */
     uint8_t lpress;                            /* the lead's key's pressure, as last sent */
-} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, "", {0}, 0, 0, 0};
+    uint8_t arp, abpm, adiv, apat, alen;       /* the arp: on; its tempo, division, pattern, length (the engine's too) */
+} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, "", {0}, 0, 0, 0,
+        0, 0, 0, 90, 1, 0, 40};
 
 /* THE THREE WAYS TO PLAY CHORDS (SEL on the Live page goes round them):
  *   P  roots and modifiers, as above
@@ -594,6 +598,64 @@ static void live_preset(int32_t e)             /* PRESETS on the page: the next 
     *q++ = (char)('1' + n);
     *q++ = ' ';
     scopy(q, preset_name(n));
+    ui.glab_until = plat_ms() + 1500u;
+    ui.act_t = plat_ms();
+}
+
+static const char *const ARP_DIV_NAME[DR_ARP_NDIV] = {"1/4", "1/8", "1/8T", "1/16"};
+static const char *const ARP_PAT_NAME[DR_ARP_NPAT] = {"UP", "UP 2 OCT", "DOWN", "DOWN 2 OCT", "UP-DOWN", "UP-DOWN 2 OCT",
+                                                       "RANDOM", "RANDOM 2 OCT"};
+static void live_arp(void)                     /* ARP tapped on the page: the arp on / off */
+{
+    lv.arp ^= 1u;
+    dr_arp(lv.arp);
+    scopy(ui.glab[0], "ARP");
+    scopy(ui.glab[1], lv.arp ? "ON" : "OFF");
+    ui.glab_until = plat_ms() + 1500u;
+    ui.act_t = plat_ms();
+}
+static int live_arp_on(void) { return lv.arp; }
+static void live_arp_knob(int i, int32_t e)    /* ARP held, a knob: Tempo, Division, Pattern, Length */
+{
+    char *q = ui.glab[1];
+    int v;
+    switch (i) {
+    case 0:
+        v = (int)lv.abpm + (int)e;
+        lv.abpm = (uint8_t)(v < DR_ARP_BPM_MIN ? DR_ARP_BPM_MIN : v > DR_ARP_BPM_MAX ? DR_ARP_BPM_MAX : v);
+        dr_arp_set(0, lv.abpm);
+        scopy(ui.glab[0], "ARP TEMPO");
+        if (dr_ext_spb > 0.0f)
+            scopy(q, "MIDI CLOCK");
+        else {
+            itoa_u(lv.abpm, q);
+            while (*q)
+                q++;
+            scopy(q, " BPM");
+        }
+        break;
+    case 1:
+        v = (int)lv.adiv + (e > 0 ? 1 : -1);
+        lv.adiv = (uint8_t)(v < 0 ? 0 : v >= DR_ARP_NDIV ? DR_ARP_NDIV - 1 : v);
+        dr_arp_set(1, lv.adiv);
+        scopy(ui.glab[0], "ARP DIVISION");
+        scopy(q, ARP_DIV_NAME[lv.adiv]);
+        break;
+    case 2:
+        v = (int)lv.apat + (e > 0 ? 1 : -1);
+        lv.apat = (uint8_t)(v < 0 ? 0 : v >= DR_ARP_NPAT ? DR_ARP_NPAT - 1 : v);
+        dr_arp_set(2, lv.apat);
+        scopy(ui.glab[0], "ARP PATTERN");
+        scopy(q, ARP_PAT_NAME[lv.apat]);
+        break;
+    default:
+        v = (int)lv.alen + (int)e * 2;
+        lv.alen = (uint8_t)(v < 0 ? 0 : v > 100 ? 100 : v);
+        dr_arp_set(3, lv.alen);
+        scopy(ui.glab[0], "ARP LENGTH");
+        itoa_u(lv.alen, q);
+        break;
+    }
     ui.glab_until = plat_ms() + 1500u;
     ui.act_t = plat_ms();
 }

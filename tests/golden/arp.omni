@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the arp on the progression page at Snap 80: ARP tapped on over a
+# chord (Up at 90 BPM in eighths), the next chord, then ARP held: Pattern to Up-down 2 octaves, Division to sixteenths,
+# Length longer; a rest (F3 held) stops it, its tails ringing; on P3 FELT its triangle; ARP off. Not a test of its own.
+notips
+tap PLAY
+wait 1500
+tap HOME
+turn ALGO 80
+wait 600
+wav arp.wav
+tapkey 0
+wait 1000
+tap ARP
+wait 300
+shot arp-on.png
+wait 2700
+tapkey 0
+wait 3000
+press ARP
+turn K3 4
+wait 300
+shot arp-pattern.png
+turn K2 2
+turn K4 15
+release ARP
+wait 4000
+key 0 down
+wait 2000
+key 0 up
+wait 3000
+turn PRESET 2
+wait 9000
+tap ARP
+wait 2500
+wavstop

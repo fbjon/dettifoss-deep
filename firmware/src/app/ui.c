@@ -224,6 +224,9 @@ static struct {
 } ui;
 static void live_keys(uint32_t keys, uint32_t ch);   /* the Live page (live.c) */
 static void live_preset(int32_t e);
+static void live_arp(void);
+static int live_arp_on(void);
+static void live_arp_knob(int i, int32_t e);
 static void live_home(void);
 static void live_oct(int up);
 static void live_snap(int32_t e);
@@ -1951,6 +1954,12 @@ static void input(void)
                                                         * HOME), till the sound has a page of its own */
             ui.btn_used |= 1u << B_SEL | m;
             page_down((int)i);
+        } else if (i == B_ARP && ui.view == V_LIVE) {  /* ARP on the Live page: a tap the arp on / off; held, its
+                                                        * knobs (live.c) */
+            if (btn & m)
+                ui.btn_used &= ~m;
+            else if (!(ui.btn_used & m))
+                live_arp();
         } else if (page_btn((int)i) >= 0) {            /* page buttons: on the press and the release */
             if (btn & m)
                 page_down((int)i);
@@ -2115,7 +2124,10 @@ static void input(void)
     else if (e)                                      /* else Gesture time, every gesture's speed */
         mtime_turn(e);
     for (i = 0; i < 4; i++)
-        if ((e = plat_enc(EN_K1 + (int)i)) != 0) {
+        if ((e = plat_enc(EN_K1 + (int)i)) != 0 && ui.view == V_LIVE && (ui.btn >> B_ARP & 1u)) {
+            ui.btn_used |= 1u << B_ARP;                /* ARP held on the Live page: the arp's knobs */
+            live_arp_knob((int)i, e);
+        } else if (e) {
             const int kp = knob_param((int)i);
             knob_turn((int)i, e);
             if (kp < 0 && ui.view == V_LIVE)
@@ -2450,6 +2462,8 @@ static void leds(void)
         float u = ph < b1 ? ph / b1 : (ph - b1) / (2.0f - b1);
         b[B_ARP] = still ? LED_DIM : wave_lvl(fm_cosf(6.2831853f * u));
     }
+    if (ui.view == V_LIVE)                             /* ARP on the Live page: lit while the arp's on */
+        b[B_ARP] = live_arp_on() ? 255 : 0;
     if (ui.loop == L_PLAY)                             /* REC: steady looping; recording, once a second, fast in the
                                                         * last 20 s before it's full (fast all along was an alarm) */
         b[B_REC] = 255;

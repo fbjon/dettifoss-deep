@@ -292,6 +292,13 @@ void dr_lead(int note_c, int gate);           /* the lead: a note (MIDI x 100), 
 #define DR_LEAD_KINDS 3
 void dr_lead_kind(int kind);                  /* the lead's sound: 0 Swell, 1 Glass, 2 Reed (a Preset's, as the pad's) */
 void dr_lead_press(int p);                    /* the held key's pressure, 0 .. 127: brighter, more vibrato */
+/* the arp: the chord's tones one at a time while a chord sounds (in the pad path) */
+#define DR_ARP_BPM_MIN 40
+#define DR_ARP_BPM_MAX 220
+#define DR_ARP_NDIV 4                          /* steps a beat: 1/4, 1/8, 1/8T, 1/16 */
+#define DR_ARP_NPAT 8                          /* Up, Up 2 oct, Down, Down 2, Up-down, Up-down 2, Random, Random 2 */
+void dr_arp(int on);
+void dr_arp_set(int what, int v);              /* 0 tempo (BPM; a MIDI clock wins), 1 division, 2 pattern, 3 length */
 #define DR_SNAP_LEGATO 34                      /* Snap's three parts: 0 .. 33 a wash, 34 .. 66 legato, 67 .. 100 a pad's */
 #define DR_SNAP_PAD 67                         /* attack (drone.c, snap_ms) */
 

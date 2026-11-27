@@ -657,7 +657,7 @@ void dr_param_text(int i, int v, char *b)
 }
 
 /* -------------------------------------------------------------- commands --- */
-enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO, C_LEAD, C_PAD };
+enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO, C_LEAD, C_PAD, C_ARP };
 /* a load (boot, project_apply) posts every value at once, before the render drains any: the queue holds
  * them all (at 64 the last values of a saved sound were dropped at start-up, the macros among them) */
 #define QN 128u
@@ -699,6 +699,8 @@ void dr_chord_rest(int snap, int bass)       /* (go's: 2 a rest, 3 one keeping t
 void dr_lead(int note_c, int gate) { post(C_LEAD, gate ? 1 : 0, note_c); }
 void dr_lead_kind(int kind) { post(C_LEAD, 2, kind < 0 || kind >= DR_LEAD_KINDS ? 0 : kind); }
 void dr_lead_press(int p) { post(C_LEAD, 3, p < 0 ? 0 : p > 127 ? 127 : p); }
+void dr_arp(int on) { post(C_ARP, 255, on ? 1 : 0); }
+void dr_arp_set(int what, int v) { post(C_ARP, what & 3, v); }
 /* the pad path's (C_PAD: a = voice * 4 + what, or PAD_G + what for the whole path) */
 #define PAD_G (4 * DR_PAD_N)
 void dr_pad_voice(int i, int note_c, int pan, int level)
@@ -1045,6 +1047,26 @@ typedef struct {
 } ld_t;
 static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): written by the core that renders it,
                                                 * by this one only while no block is handed over (drain) */
+/* THE ARP: the chord's four tones an octave up, one at a time in a pattern, each a plucked note (a quick attack, a
+ * decay as long as Length says, a low-pass closing with it) on four voices in turn, so tails overlap; the steps on
+ * the beat, the arp's own tempo or a MIDI clock's. It plays while a chord sounds (not through a rest). Its wave is
+ * the pad's kind's (Saws a saw, Wide saws a saw, Felt a triangle). In the pad path, after the pad's filter and
+ * chorus; set here (drain, arp_follow) before the hand-over, rendered by the core that renders the pad path */
+#define AR_N 4
+#define AR_LVL 0.5f                              /* a note at its peak; less as the tails overlap (arp_follow) */
+static const uint8_t AR_DIV[DR_ARP_NDIV] = {1, 2, 3, 4};   /* steps a beat: 1/4, 1/8, 1/8T, 1/16 */
+static const uint8_t AR_WAVE[3] = {DR_SAW, DR_SAW, DR_TRI};
+static const float AR_G[3] = {1.0f, 1.0f, 0.5f};   /* (the triangle through the same filter: 6 dB louder) */
+typedef struct {
+    float ph, inc, env, amp, s1, s2, gl, gr, note;
+} arv_t;
+static struct {
+    arv_t v[AR_N];
+    float ph, inc;                              /* the step's phase (0 .. 1) at the block's start, a sample's step */
+    float note[4], dec, g;                      /* the tones (ascending, MIDI); a note's decay per second; the level */
+    uint32_t step, rnd;
+    uint8_t on, play, nn, pat, div, bpm, len, next, live, wave;
+} ar __attribute__((aligned(32))) = {.bpm = 90, .div = 1, .len = 40, .rnd = 12345u};
 /* THE PAD PATH'S VOICES (drone.h): set by drain, the rest by the core that renders them. pv_live: how many sound,
  * as the last block left them (or a level just set), read here at the next block's start */
 #define PV_GAIN 0.2f                          /* a voice at level 100, before its pan */
@@ -2077,8 +2099,23 @@ static void drain(void)
                     pad_chord_set(0.0f);
             }
             break;
+        case C_ARP:
+            if (a == 255)
+                ar.on = (uint8_t)(b != 0);
+            else if (a == 0)
+                ar.bpm = (uint8_t)(b < DR_ARP_BPM_MIN ? DR_ARP_BPM_MIN : b > DR_ARP_BPM_MAX ? DR_ARP_BPM_MAX : b);
+            else if (a == 1)
+                ar.div = (uint8_t)(b < 0 ? 0 : b >= DR_ARP_NDIV ? DR_ARP_NDIV - 1 : b);
+            else if (a == 2)
+                ar.pat = (uint8_t)(b < 0 ? 0 : b >= DR_ARP_NPAT ? DR_ARP_NPAT - 1 : b);
+            else
+                ar.len = (uint8_t)(b < 0 ? 0 : b > 100 ? 100 : b);
+            break;
         case C_PANIC: {
             int g;
+            for (g = 0; g < AR_N; g++)
+                ar.v[g].env = ar.v[g].amp = 0.0f;
+            ar.live = 0;
             ld.gate = 0;
             ld.amp = 0.0f;
             for (g = 0; g < DR_PAD_N; g++)
@@ -3401,6 +3438,81 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into p
     }
 }
 
+/* the arp's next note (the pattern: up, down, up and down, random; over one octave or two) */
+static float arp_note(void)
+{
+    const int nn = ar.nn, two = ar.pat & 1, L = nn * (two ? 2 : 1), kind = ar.pat >> 1;
+    int i;
+    if (kind == 3) {                             /* random: not the same twice */
+        ar.rnd = ar.rnd * 1664525u + 1013904223u;
+        i = (int)((ar.rnd >> 16) % (uint32_t)(L > 1 ? L - 1 : 1));
+        i = L > 1 && i >= (int)ar.next ? i + 1 : i;
+    } else if (kind == 2 && L > 1) {             /* up and down: the ends once */
+        const int per = 2 * L - 2, k = (int)(ar.step % (uint32_t)per);
+        i = k < L ? k : per - k;
+    } else {
+        i = (int)(ar.step % (uint32_t)L);
+        i = kind == 1 ? L - 1 - i : i;
+    }
+    ar.next = (uint8_t)i;
+    ar.step++;
+    return ar.note[i % nn] + (float)(12 * (i / nn));
+}
+static __attribute__((noinline)) void arp_run(uint32_t n)
+{
+    uint32_t j0, j;
+    int i, live = 0;
+    for (j0 = 0; j0 < n; j0 += CR) {
+        const uint32_t je = j0 + CR < n ? j0 + CR : n;
+        const float dt = (float)(je - j0) * (1.0f / DR_SR), inv = 1.0f / (float)(je - j0);
+        ar.ph += ar.inc * (float)(je - j0);
+        if (ar.ph >= 1.0f) {                     /* a step (on the control rate's 16 samples: 0.36 ms) */
+            ar.ph -= ar.ph >= 2.0f ? fm_floorf(ar.ph) : 1.0f;
+            if (ar.play && ar.nn) {
+                arv_t *v = &ar.v[ar.step % AR_N];
+                const float pan = ar.step & 1u ? 0.35f : -0.35f;
+                v->note = arp_note();
+                v->inc = note_inc(v->note);
+                v->env = 1.0f;
+                v->gl = 0.70710678f * (1.0f - pan);
+                v->gr = 0.70710678f * (1.0f + pan);
+            }
+        }
+        live = 0;
+        for (i = 0; i < AR_N; i++) {
+            arv_t *v = &ar.v[i];
+            float a = v->amp, da, fc, g, a1, a2, a3, ph = v->ph, s1 = v->s1, s2 = v->s2;
+            if (v->env <= 0.0f && a <= 0.0f)
+                continue;
+            live = 1;
+            v->env = v->env > 1e-3f ? v->env - v->env * fm_minf(dt * ar.dec, 1.0f) : 0.0f;
+            v->amp = a + (v->env - a) * fm_minf(dt * (1.0f / 0.003f), 1.0f);   /* (a 3 ms attack, no click) */
+            v->amp = v->amp < 1e-5f && v->env <= 0.0f ? 0.0f : v->amp;
+            da = (v->amp - a) * inv;
+            fc = 440.0f * fm_exp2f((v->note - 69.0f) * (1.0f / 12.0f) + 1.0f + 3.0f * v->env);   /* an octave over
+                                                     * the note, up to four as it's plucked */
+            g = fm_tanf(FM_PI * fm_minf(fc, 0.4f * DR_SR) * (1.0f / DR_SR));
+            a1 = 1.0f / (1.0f + g * (g + 1.3f));
+            a2 = g * a1;
+            a3 = g * a2;
+            for (j = j0; j < je; j++) {
+                const float x = osc(ar.wave, ph, v->inc, 0.5f), v3 = x - s2;
+                const float v1 = a1 * s1 + a2 * v3, v2 = s2 + a2 * s1 + a3 * v3;
+                s1 = 2.0f * v1 - s1;
+                s2 = 2.0f * v2 - s2;
+                ph = advance(ph, v->inc);
+                a += da;
+                padl[j] += a * ar.g * v->gl * v2;
+                padr[j] += a * ar.g * v->gr * v2;
+            }
+            v->ph = ph;
+            v->s1 = fm_flush(s1);
+            v->s2 = fm_flush(s2);
+        }
+    }
+    ar.live = (uint8_t)live;
+}
+
 /* the chorus, on padl / padr in place; nothing while it's out */
 static __attribute__((noinline)) void pv_chorus(uint32_t n)
 {
@@ -3507,14 +3619,55 @@ void dr_pad_run(void)
         padl[j] = padr[j] = 0.0f;
     if (pad_voices)
         pv_run(pad_k);
+    if (ar.play || ar.live)
+        arp_run(pad_k);
     lead_run(pad_k);                             /* the lead after the pad's filter: its own two */
 }
 
 /* the pad's filter follows the live macros (here, before the hand-over: a block's lag, under its 30 ms glide): DARK
  * closes it up to 2.5 octaves, or opens it 1.5; the LFO's first wave sweeps it, +-4 semitones, to +-12 with MOTION up
  * and still with it down */
+static void arp_follow(void)                     /* the arp's tones and its beat, for the block about to be rendered */
+{
+    float t[4], x;
+    int on[4], i, k, n = 0;
+    ar.play = (uint8_t)(ar.on && ch_on && !cr.rest);
+    ar.wave = AR_WAVE[pad_kind];
+    t[0] = (float)chs_main[0] * 0.01f + 12.0f;
+    t[1] = (float)(chs_main[0] + chs_iv[0]) * 0.01f + 12.0f;
+    t[2] = (float)chs_main[1] * 0.01f + 12.0f;
+    t[3] = (float)(chs_main[1] + chs_iv[1]) * 0.01f + 12.0f;
+    on[0] = on[2] = 1;
+    on[1] = chs_pon[0];
+    on[3] = chs_pon[1];
+    for (i = 0; i < 4; i++) {                    /* ascending (insertion), the partners that are off left out */
+        if (!on[i])
+            continue;
+        x = t[i];
+        for (k = n; k > 0 && ar.note[k - 1] > x; k--)
+            ar.note[k] = ar.note[k - 1];
+        ar.note[k] = x;
+        n++;
+    }
+    ar.nn = (uint8_t)n;
+    if (dr_ext_spb > 0.0f) {                     /* a MIDI clock: its beat, pulled in gently (half the way a block) */
+        float d = ext_beats() * (float)AR_DIV[ar.div];
+        d = (d - fm_floorf(d)) - ar.ph;
+        d += d > 0.5f ? -1.0f : d < -0.5f ? 1.0f : 0.0f;
+        ar.ph = fm_maxf(ar.ph + 0.5f * d, 0.0f);
+        ar.inc = (float)AR_DIV[ar.div] / dr_ext_spb;
+    } else
+        ar.inc = (float)ar.bpm * (float)AR_DIV[ar.div] * (1.0f / (60.0f * DR_SR));
+    {                                            /* Length 0 .. 100: a decay of a twentieth of a step .. 2.5 steps */
+        const float l = (float)ar.len * 0.01f, steps = 0.05f + 2.5f * l * l;
+        ar.dec = 1.0f / (steps / (ar.inc * DR_SR) + 0.02f);
+        ar.g = AR_LVL * AR_G[pad_kind] / fm_sqrtf(1.0f + steps);  /* (as long tails pile up: about the same loudness) */
+    }
+}
+
 static void pad_follow(void)
 {
+    arp_follow();
     const float dk = (float)base[P_DARK] * 0.01f, mo = (float)base[P_MOTION] * 0.01f;
     const float depth = mo >= 0.0f ? 4.0f + 8.0f * mo : 4.0f * (1.0f + mo);
     pv.fco = (dk < 0.0f ? 30.0f : 18.0f) * dk + depth * lfo_s[0];
@@ -3535,7 +3688,7 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
         uint32_t k = n > BLK ? BLK : n, j;
         int g, pad = 0;                          /* the pad path: off, handed over (1), here (0 .. as hand()) */
         float frate = fade_rate();
-        if (ld.gate || ld.amp > 0.0f || pv.live) {
+        if (ld.gate || ld.amp > 0.0f || pv.live || (ar.on && ch_on) || ar.live) {
             pad_k = k;
             pad_follow();
             pad = pad_hand ? pad_hand() : 0;
@@ -3596,7 +3749,8 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
         /* the effects, after the fade: the tails ring on when stopped. Stopped, and silent (below -120 dB)
          * for longer than the delay's line (743 ms: an echo still in it would have come out by then), they
          * rest until PLAY */
-        if (fade > 0.0f || fade_target > 0.0f || fx_quiet < 160u || ld.gate || ld.amp > 0.0f || pv.live) {
+        if (fade > 0.0f || fade_target > 0.0f || fx_quiet < 160u || ld.gate || ld.amp > 0.0f || pv.live || ar.live ||
+            (ar.on && ch_on)) {
             float pk = 0.0f;
             DR_FAR(fx_run)(mixl, mixr, k);
             clean_hold(mixl, mixr, k);
