@@ -11,6 +11,7 @@
  *   SEL + the lit root   the chord let go: the drones back to the sound's own pitches
  *   OCT- / OCT+    the chords an octave down / up (-1 .. +1)
  *   KNOB 1-4       Dark-Bright, Thickness, Motion, Space (the live macros, a sound's)
+ *   PRESETS        the sound: P1 DETTIFOSS, P2 WIDE, P3 FELT, each with its pad, gliding there; the knobs stay
  *   ALGORITHM      Snap: how a change lands: a wash (a slow glide) .. legato (a short one) .. a pad's attack
  *
  * A chord is a bass and three tones over it: drone I's main note the bass, its partner the fifth, drone II's main
@@ -30,7 +31,7 @@
  *                  again
  *   G3 .. F#5      the lead (a placeholder): one note at a time, the last key pressed; held notes glide
  *   OCT- / OCT+    the lead an octave down / up (-1 .. +1); the chords keep the Live page's octave
- *   the knobs, ALGORITHM   as on the Live page
+ *   the knobs, ALGORITHM, PRESETS   as on the Live page
  *
  * SEL + HOME, on either, opens Niagara Drift's Drones and Pitch pages (again: the other), till the sound has its own.
  *
@@ -84,6 +85,7 @@ static struct {
     uint8_t nlead;
     int8_t lnote;                              /* ... the note sounding or last sounded, MIDI */
     int8_t loct;                               /* ... its octave (OCT on the progression), -1 .. 1 */
+    uint8_t preset;                            /* the PRESET encoder's last Preset (0 .. LV_NPRESET - 1) */
 } lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, "", {0}, 0, 0, 0};
 
 /* THE THREE WAYS TO PLAY CHORDS (SEL on the Live page goes round them):
@@ -571,6 +573,25 @@ static void live_snap(int32_t e)               /* ALGORITHM on the page: Snap */
     lv.snap = (uint8_t)(v < 0 ? 0 : v > 100 ? 100 : v);
     scopy(ui.glab[0], lv.snap < DR_SNAP_LEGATO ? "SNAP: WASH" : lv.snap < DR_SNAP_PAD ? "SNAP: LEGATO" : "SNAP: PAD");
     itoa_u(lv.snap, ui.glab[1]);
+    ui.glab_until = plat_ms() + 1500u;
+    ui.act_t = plat_ms();
+}
+
+#define LV_NPRESET 3                           /* the PRESET encoder's: P1 .. P3 */
+static void live_preset(int32_t e)             /* PRESETS on the page: the next or previous Preset */
+{
+    int n = proj.bank == BANK_PRESETS && ui.scene_at >= 0 && ui.scene_at < LV_NPRESET ? ui.scene_at : lv.preset;
+    char *q = ui.glab[1];
+    n += e > 0 ? 1 : -1;
+    n = n < 0 ? 0 : n >= LV_NPRESET ? LV_NPRESET - 1 : n;
+    if (n != lv.preset || ui.scene_at != n)
+        preset_go(n);
+    lv.preset = (uint8_t)n;
+    scopy(ui.glab[0], "PRESET");
+    *q++ = 'P';
+    *q++ = (char)('1' + n);
+    *q++ = ' ';
+    scopy(q, preset_name(n));
     ui.glab_until = plat_ms() + 1500u;
     ui.act_t = plat_ms();
 }

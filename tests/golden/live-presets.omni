@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the PRESET encoder on the progression page: P1 DETTIFOSS, then P2 WIDE, P3 FELT, each glided to (the Scene time) and
+# heard over the progression's steps at Snap 80 and Thickness 60, which stay where they are; then back to P2 at the
+# end (the left end: P1 again). Its banner shot on P2.
+notips
+tap PLAY
+wait 1500
+tap HOME
+turn ALGO 80
+set 87 60
+wait 600
+wav live-dettifoss.wav
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+wavstop
+turn PRESET 1
+wait 300
+shot live-preset-banner.png
+wait 9000
+wav live-wide.wav
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+wavstop
+turn PRESET 1
+wait 9000
+wav live-felt.wav
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+wavstop
+turn PRESET 5
+turn PRESET -1
+turn PRESET -1
+turn PRESET -1
+wait 300
+shot live-preset-left.png

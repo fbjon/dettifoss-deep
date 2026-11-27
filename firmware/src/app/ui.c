@@ -223,6 +223,7 @@ static struct {
     uint8_t splash_done;
 } ui;
 static void live_keys(uint32_t keys, uint32_t ch);   /* the Live page (live.c) */
+static void live_preset(int32_t e);
 static void live_home(void);
 static void live_oct(int up);
 static void live_snap(int32_t e);
@@ -1236,6 +1237,17 @@ static void scene_play(int bank, int n)
     ui.morph_ms = (uint32_t)(scene_s() * 1000.0f);
 }
 
+/* the PRESET encoder on the Live page: Preset n, there over the Scene time as a key would take it; the live macros stay
+ * where the hands left them (a sound to play the chords on, not a scene) */
+static void preset_go(int n)
+{
+    int k;
+    proj.bank = BANK_PRESETS;
+    scene_recall(n, 1);
+    for (k = P_DARK; k <= P_SPACE; k++)
+        ui.morph_to[k] = proj.par[k];
+}
+
 /* a visit let go: morph back to the sound before it, over the Scene time */
 static void scene_back(void)
 {
@@ -2094,7 +2106,9 @@ static void input(void)
     else if (e)                                      /* else the Movement, every LFO depth 0 .. 200 % */
         global_turn(EN_ALGO, P_MOVE, "MOVEMENT", e);
     live_run();
-    if ((e = plat_enc(EN_PRESET)) != 0)              /* PRESETS: Gesture time, every gesture's speed */
+    if ((e = plat_enc(EN_PRESET)) != 0 && ui.view == V_LIVE)   /* PRESETS: on the Live page the Presets; */
+        live_preset(e);
+    else if (e)                                      /* else Gesture time, every gesture's speed */
         mtime_turn(e);
     for (i = 0; i < 4; i++)
         if ((e = plat_enc(EN_K1 + (int)i)) != 0) {

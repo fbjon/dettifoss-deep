@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# A recipe's render (tools/make_manual.py --renders): from P3, headphones, Pitch lock off.
+# A recipe's render (tools/make_manual.py --renders): from P3, drone I's filter a band-pass (Vespers' was), headphones,
+# Pitch lock off.
 # "# @" marks the listening times (tools/make_manual.py --times).
 page 0
 notips
@@ -8,6 +9,8 @@ set 74 0
 set 71 0
 set 70 0
 tapkey w2
+wait 9000
+set 9 1
 tap PLAY
 wait 2500
 tap GLO

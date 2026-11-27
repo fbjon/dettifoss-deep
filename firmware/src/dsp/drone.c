@@ -1692,12 +1692,12 @@ static const padkind_t PAD_KIND[DR_PAD_KINDS] = {
     {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.7f}, {DR_SAW, 14, 2, 0, 0.04f, 0.08f, 1.0f}}, 2, 96.0f, 1.4f},
     /* 1: WIDE SAWS (the synthesis recipes'): four saws a tone, an octave of triangles over the tones, a sine under
      * the bass */
-    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.7f}, {DR_SAW, 14, 4, 0, 0.06f, 0.05f, 0.62f},
-      {DR_TRI, 14, 2, 1, 0.03f, 0.02f, 0.4f}, {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.8f}}, 4, 90.0f, 1.6f},
+    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.5f}, {DR_SAW, 14, 4, 0, 0.06f, 0.05f, 0.45f},
+      {DR_TRI, 14, 2, 1, 0.03f, 0.02f, 0.3f}, {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.6f}}, 4, 90.0f, 1.6f},
     /* 2: FELT (the recipes' felt and air, its body): warm triangles, a pair a tone, a sine under the bass, the filter
      * low */
-    {{{DR_TRI, 1, 1, 0, 0.0f, 0.0f, 0.4f}, {DR_TRI, 14, 2, 0, 0.04f, 0.03f, 0.55f},
-      {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.4f}}, 3, 81.0f, 1.8f},
+    {{{DR_TRI, 1, 1, 0, 0.0f, 0.0f, 0.56f}, {DR_TRI, 14, 2, 0, 0.04f, 0.03f, 0.77f},
+      {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.56f}}, 3, 81.0f, 1.8f},
 };
 static uint8_t pad_kind, padc_nv;                /* the kind; how many voices the sounding half has */
 static void pad_voice_set(int i, int wave, float note, float pan, float lvl, float glide)   /* (from drain) glide: s */
