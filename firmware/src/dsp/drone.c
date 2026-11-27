@@ -1047,8 +1047,9 @@ typedef struct {
 } ld_t;
 static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): written by the core that renders it,
                                                 * by this one only while no block is handed over (drain) */
-/* THE ARP: the chord's four tones an octave up, one at a time in a pattern, each a plucked note (a quick attack, a
- * decay as long as Length says, a low-pass closing with it) on four voices in turn, so tails overlap; the steps on
+/* THE ARP: the chord's tones in the octave over the bass, one at a time in a pattern, each a plucked note (a quick
+ * attack, a decay as long as Length says, a low-pass closing with it, a little quieter up high) on four voices in
+ * turn, so tails overlap; the steps on
  * the beat, the arp's own tempo or a MIDI clock's. It plays while a chord sounds (not through a rest). Its wave is
  * the pad's kind's (Saws a saw, Wide saws a saw, Felt a triangle). In the pad path, after the pad's filter and
  * chorus; set here (drain, arp_follow) before the hand-over, rendered by the core that renders the pad path */
@@ -1058,7 +1059,7 @@ static const uint8_t AR_DIV[DR_ARP_NDIV] = {1, 2, 3, 4};   /* steps a beat: 1/4,
 static const uint8_t AR_WAVE[3] = {DR_SAW, DR_SAW, DR_TRI};
 static const float AR_G[3] = {1.0f, 1.0f, 0.5f};   /* (the triangle through the same filter: 6 dB louder) */
 typedef struct {
-    float ph, inc, env, amp, s1, s2, gl, gr, note;
+    float ph, inc, env, amp, s1, s2, gl, gr, note, kg;   /* kg: the note's gain (lower up high) */
 } arv_t;
 static struct {
     arv_t v[AR_N];
@@ -3473,6 +3474,7 @@ static __attribute__((noinline)) void arp_run(uint32_t n)
                 const float pan = ar.step & 1u ? 0.35f : -0.35f;
                 v->note = arp_note();
                 v->inc = note_inc(v->note);
+                v->kg = fm_exp2f(-0.5f * fm_maxf(v->note - 72.0f, 0.0f) * (1.0f / 12.0f));   /* -3 dB an octave over C5 */
                 v->env = 1.0f;
                 v->gl = 0.70710678f * (1.0f - pan);
                 v->gr = 0.70710678f * (1.0f + pan);
@@ -3490,8 +3492,8 @@ static __attribute__((noinline)) void arp_run(uint32_t n)
             v->amp = v->amp < 1e-5f && v->env <= 0.0f ? 0.0f : v->amp;
             da = (v->amp - a) * inv;
             fc = 440.0f * fm_exp2f((v->note - 69.0f) * (1.0f / 12.0f) + 1.0f + 3.0f * v->env);   /* an octave over
-                                                     * the note, up to four as it's plucked */
-            g = fm_tanf(FM_PI * fm_minf(fc, 0.4f * DR_SR) * (1.0f / DR_SR));
+                                                     * the note, up to four as it's plucked; never over 5 kHz */
+            g = fm_tanf(FM_PI * fm_minf(fc, 5000.0f) * (1.0f / DR_SR));
             a1 = 1.0f / (1.0f + g * (g + 1.3f));
             a2 = g * a1;
             a3 = g * a2;
@@ -3502,8 +3504,8 @@ static __attribute__((noinline)) void arp_run(uint32_t n)
                 s2 = 2.0f * v2 - s2;
                 ph = advance(ph, v->inc);
                 a += da;
-                padl[j] += a * ar.g * v->gl * v2;
-                padr[j] += a * ar.g * v->gr * v2;
+                padl[j] += a * ar.g * v->kg * v->gl * v2;
+                padr[j] += a * ar.g * v->kg * v->gr * v2;
             }
             v->ph = ph;
             v->s1 = fm_flush(s1);
@@ -3629,21 +3631,29 @@ void dr_pad_run(void)
  * and still with it down */
 static void arp_follow(void)                     /* the arp's tones and its beat, for the block about to be rendered */
 {
+    const float b = (float)chs_main[0] * 0.01f + 12.0f;   /* the octave over the bass */
     float t[4], x;
     int on[4], i, k, n = 0;
     ar.play = (uint8_t)(ar.on && ch_on && !cr.rest);
     ar.wave = AR_WAVE[pad_kind];
-    t[0] = (float)chs_main[0] * 0.01f + 12.0f;
-    t[1] = (float)(chs_main[0] + chs_iv[0]) * 0.01f + 12.0f;
-    t[2] = (float)chs_main[1] * 0.01f + 12.0f;
-    t[3] = (float)(chs_main[1] + chs_iv[1]) * 0.01f + 12.0f;
+    t[0] = (float)chs_main[0] * 0.01f;
+    t[1] = (float)(chs_main[0] + chs_iv[0]) * 0.01f;
+    t[2] = (float)chs_main[1] * 0.01f;
+    t[3] = (float)(chs_main[1] + chs_iv[1]) * 0.01f;
     on[0] = on[2] = 1;
     on[1] = chs_pon[0];
     on[3] = chs_pon[1];
-    for (i = 0; i < 4; i++) {                    /* ascending (insertion), the partners that are off left out */
+    for (i = 0; i < 4; i++) {                    /* folded into the octave over the bass (close, not the voicing's
+                                                  * spread: its top two octaves up had pierced), ascending, once each,
+                                                  * the partners that are off left out */
         if (!on[i])
             continue;
-        x = t[i];
+        x = t[i] - b;
+        x = b + x - 12.0f * fm_floorf(x * (1.0f / 12.0f));
+        for (k = 0; k < n && fm_fabsf(ar.note[k] - x) > 0.01f; k++)
+            ;
+        if (k < n)
+            continue;
         for (k = n; k > 0 && ar.note[k - 1] > x; k--)
             ar.note[k] = ar.note[k - 1];
         ar.note[k] = x;

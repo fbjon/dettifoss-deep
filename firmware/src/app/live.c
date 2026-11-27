@@ -12,8 +12,9 @@
  *   OCT- / OCT+    the chords an octave down / up (-1 .. +1)
  *   KNOB 1-4       Dark-Bright, Thickness, Motion, Space (the live macros, a sound's)
  *   PRESETS        the sound: P1 DETTIFOSS, P2 WIDE, P3 FELT, each with its pad, gliding there; the knobs stay
- *   ARP            a tap: the arp on / off (lit while on): the chord's tones an octave up, one at a time, while a
- *                  chord sounds. Held, the knobs: Tempo (a MIDI clock wins), Division, Pattern, Length
+ *   ARP            a tap: the arp on / off (lit while on): the chord's tones in the octave over the bass, one at
+ *                  a time, while a chord sounds. Held, the knobs: Tempo (a MIDI clock wins), Division, Pattern,
+ *                  Length
  *   ALGORITHM      Snap: how a change lands: a wash (a slow glide) .. legato (a short one) .. a pad's attack
  *
  * A chord is a bass and three tones over it: drone I's main note the bass, its partner the fifth, drone II's main
