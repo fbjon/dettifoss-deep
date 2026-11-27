@@ -529,7 +529,7 @@ static void live_snap(int32_t e)               /* ALGORITHM on the page: Snap */
 
 static void live_sel(void)                     /* SEL (a tap) on the chords: P, Q, R in turn; the chord kept */
 {
-    static const char *const SAY[LV_NMODE] = {"ROOTS + MODIFIERS", "ROOT + SHAPE", "THE WHOLE KEYBOARD"};
+    static const char *const SAY[LV_NMODE] = {"ROOTS + MODIFIERS", "ROOT + SHAPE", "WHOLE KEYBOARD"};
     char t[8];
     if (lv.prog)
         return;
