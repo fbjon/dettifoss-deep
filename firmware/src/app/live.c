@@ -29,7 +29,8 @@
  *   G5             BASS: the bass sounding held under the chords that follow, through rests too (lit), till tapped
  *                  again
  *   G3 .. F#5      the lead (a placeholder): one note at a time, the last key pressed; held notes glide
- *   OCT, the knobs, ALGORITHM   as on the Live page
+ *   OCT- / OCT+    the lead an octave down / up (-1 .. +1); the chords keep the Live page's octave
+ *   the knobs, ALGORITHM   as on the Live page
  *
  * SEL + HOME, on either, opens Niagara Drift's Drones and Pitch pages (again: the other), till the sound has its own.
  *
@@ -82,7 +83,8 @@ static struct {
     int8_t lead[PG_NLEAD];                     /* the progression: the lead's keys held, the last pressed last */
     uint8_t nlead;
     int8_t lnote;                              /* ... the note sounding or last sounded, MIDI */
-} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, "", {0}, 0, 0};
+    int8_t loct;                               /* ... its octave (OCT on the progression), -1 .. 1 */
+} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, "", {0}, 0, 0, 0};
 
 /* THE THREE WAYS TO PLAY CHORDS (SEL on the Live page goes round them):
  *   P  roots and modifiers, as above
@@ -347,7 +349,7 @@ static void pg_lead(uint32_t keys, uint32_t ch)   /* the lead: one note, the las
             lv.lead[lv.nlead++] = (int8_t)k;
     }
     if (lv.nlead) {
-        lv.lnote = (int8_t)(53 + lv.lead[lv.nlead - 1]);
+        lv.lnote = (int8_t)(53 + lv.lead[lv.nlead - 1] + 12 * lv.loct);
         dr_lead(lv.lnote * 100, 1);
     } else if (lv.lnote)
         dr_lead(lv.lnote * 100, 0);
@@ -537,8 +539,19 @@ static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
 }
 
 static int live_lh(void) { return live_q() ? lv.lh : -1; }   /* Q: the left hand's, for OCT's lights */
-static void live_oct(int up)                   /* OCT- / OCT+ on the page: the register; Q: the left hand's */
+static void live_oct(int up)                   /* OCT- / OCT+ on the page: the register; Q: the left hand's; the
+                                                * progression: the lead's */
 {
+    if (lv.prog) {
+        const int o = lv.loct + (up ? 1 : -1);
+        if (o < -1 || o > 1)
+            return;
+        lv.loct = (int8_t)o;
+        say("LEAD", o > 0 ? "AN OCTAVE UP" : o < 0 ? "AN OCTAVE DOWN" : "AS THE KEYS");
+        if (lv.nlead)
+            pg_lead(0, 0);                     /* (the note held, there now: a glide) */
+        return;
+    }
     if (live_q()) {                            /* the bass alone (OCT-), the root alone (OCT+), the lit one: both */
         lv.lh = (uint8_t)(lv.lh == (up ? 2 : 1) ? 0 : up ? 2 : 1);
         say("LEFT HAND", lv.lh == 1 ? "THE BASS ALONE" : lv.lh == 2 ? "THE ROOT ALONE" : "ROOT AND BASS");

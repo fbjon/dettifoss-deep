@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # the same-samples check (tools/same_samples.py): the placeholder lead on the progression page over the chords at
 # Snap 80: a note alone, two held (the later one sounding, gliding back when it is let go), a long note with its
-# vibrato grown in. Not a test of its own.
+# vibrato grown in, moved an octave down (OCT-). Not a test of its own.
 notips
 tap PLAY
 wait 1500
@@ -26,7 +26,9 @@ wait 600
 tapkey 0
 wait 400
 key 21 down
-wait 2500
+wait 1200
+tap OCT-
+wait 1300
 key 21 up
 key 17 down
 wait 1800
