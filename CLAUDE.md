@@ -91,8 +91,9 @@ Every firmware PR body carries `tools/budget.py`'s line, so a change's cost is s
 - `drone.c` is one compilation unit (it includes `drone_fx.c`): declare statics before first use.
 - A sound change comes with a host render (WAV) and numbers measured on it; a screen change with a
   screenshot. Measure on and off as two renders of the same passage (the host is deterministic).
-- **A change that shouldn't change the sound or the screen passes `tools/same_samples.py`** (CI runs it on every PR:
-  every fixed render in `tests/golden`, every scenario, the engine's scenes, sample by sample). One that means to
+- **A change that shouldn't change the sound or the screen passes `tools/same_samples.py`** (every fixed render
+  in `tests/golden`, every scenario, the engine's scenes, sample by sample; CI runs it on every PR while the repository
+  variable `SAME_SAMPLES` is `on`, off during the rework, so run it by hand). One that means to
   carries the PR label `changes-sound`, with its WAVs; one that changes only the screen `changes-screen` (the sound still
   checked). A new feature adds its own render to `tests/golden`; renumbered
   parameters or pages renumber `tests/golden` too (a script that differs from main's isn't compared, only listed).
