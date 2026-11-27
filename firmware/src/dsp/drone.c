@@ -1027,6 +1027,7 @@ static struct {
     float fc, fct, k, s1[2], s2[2];             /* the filter: its cutoff (a note) gliding to fct, 1 / Q, states */
     int live;
 } pv __attribute__((aligned(32)));
+static uint8_t padc_bank, padc_on;               /* Thickness's pad (pad_chord): the half sounding, whether it plays */
 static void pv_reset(void)
 {
     static const pv_t none;
@@ -1042,6 +1043,7 @@ static void pv_reset(void)
     pv.k = 1.4f;
     pv.s1[0] = pv.s1[1] = pv.s2[0] = pv.s2[1] = 0.0f;
     pv.live = 0;
+    padc_bank = padc_on = 0;
 }
 
 void dr_init(void)
@@ -1652,12 +1654,63 @@ static void chord_swap(void)                     /* each drone starts for its ne
 static float snap_cut(int s) { return s < DR_SNAP_PAD ? 0.0f : snap_part(s, DR_SNAP_PAD - 1, 100); }
 static float chord_cut(void) { return ch_k * ch_pr; }
 static float snap_rel(int s) { return s < DR_SNAP_LEGATO ? 1.5f : s < DR_SNAP_PAD ? 0.6f : snap_brel(s); }
+/* THICKNESS UP, UNDER A CHORD: the pad path doubles its tones, each as a pair detuned and spread apart (the bass one
+ * voice, centred); the more Thickness, the wider and the louder. A change's new notes come in on the other half of
+ * the voices while the old ones release, so changes overlap. Thickness at 0 or under: no pad */
+#define PADC_N 7                                 /* a chord's voices: the bass, and a pair for each of three tones */
+static void pad_voice_set(int i, float note, float pan, float lvl)   /* (as dr_pad_voice, from drain) */
+{
+    pv_t *v = &pv.v[i];
+    const float t = (pan + 1.0f) * (FM_PI * 0.25f);
+    v->note = note;
+    v->gl = fm_cosf(t);
+    v->gr = fm_sinf(t);
+    v->lvl = lvl;
+    if (lvl > 0.0f)
+        pv.live = 1;
+}
+static void pad_chord_set(void)                  /* the sounding half's notes, spread and levels, as Thickness says */
+{
+    const float t = (float)par[P_THICK] * 0.01f, det = 0.04f + 0.08f * t, sp = 0.4f + 0.5f * t;
+    const float lvl = fm_minf(0.45f + 0.3f * t, 1.0f);
+    const int v0 = padc_bank * (DR_PAD_N / 2);
+    float tone[3];
+    int k;
+    tone[0] = (float)(chs_main[0] + (chs_pon[0] ? chs_iv[0] : 0)) * 0.01f;
+    tone[1] = (float)chs_main[1] * 0.01f;
+    tone[2] = (float)(chs_main[1] + chs_iv[1]) * 0.01f;
+    pad_voice_set(v0, (float)chs_main[0] * 0.01f, 0.0f, lvl * 0.7f);
+    for (k = 0; k < 3; k++) {
+        const float on = k == 0 && !chs_pon[0] ? 0.0f : k == 2 && !chs_pon[1] ? 0.0f : lvl;
+        pad_voice_set(v0 + 1 + 2 * k, tone[k] - det, -sp, on);
+        pad_voice_set(v0 + 2 + 2 * k, tone[k] + det, sp, on);
+    }
+}
+static void pad_chord_off(void)                  /* the sounding half released */
+{
+    int k;
+    for (k = 0; k < PADC_N; k++)
+        pv.v[padc_bank * (DR_PAD_N / 2) + k].lvl = 0.0f;
+    padc_on = 0;
+}
+static void pad_chord(int on)                    /* a chord in (its notes on the other half) or let go */
+{
+    if (padc_on)
+        pad_chord_off();
+    if (!on || par[P_THICK] <= 0 || fade_target <= 0.0f)
+        return;
+    padc_bank ^= 1u;
+    padc_on = 1;
+    pad_chord_set();
+}
 static void chord_rest(int snap, int bass)
 {
     if (!ch_on)
         return;
     cr.rest = cr.rp = 1;
     cr.bkr = (uint8_t)bass;
+    if (padc_on)
+        pad_chord_off();
     cr.gr = -1.0f / (snap_rel(snap) * DR_SR);
     if (fade <= 0.0f)
         cr.g = cr.g0 = 0.0f;
@@ -1669,6 +1722,7 @@ static void chord_go(int on, int snap)            /* on: 0 let go, 1 the chord s
         return;
     }
     const int moved = cr.rest && !cr.rp;         /* after a rest, its notes already where they're going */
+    pad_chord(on);
     /* the same bass as before: it carries on through a pad's change, not released and in again */
     cr.bp = cr.b;
     cr.bk = (uint8_t)(on && ch_on && grp[0].con && fm_fabsf(grp[0].cp - (float)chs_main[0] * 0.01f) < 0.001f);
@@ -1777,6 +1831,14 @@ static void drain(void)
                     grp[0].gtarget = DR_OUT(base[a], 0) ? 0.0f : 1.0f;
                     grp[1].gtarget = DR_OUT(base[a], 1) ? 0.0f : 1.0f;
                 }
+                if (a == P_THICK && ch_on && !cr.rest) {   /* the pad follows: in, out, or wider */
+                    if (par[a] <= 0 && padc_on)
+                        pad_chord_off();
+                    else if (par[a] > 0 && padc_on)
+                        pad_chord_set();
+                    else if (par[a] > 0 && fade_target > 0.0f)
+                        pad_chord(1);
+                }
                 if ((a >= P_WANDER && a <= P_SPACE) || live_on())
                     mac_dirty = 1;             /* an amount or a depth, or any value under a live macro (its moves
                                                 * reach from the value): the offsets again */
@@ -1822,6 +1884,8 @@ static void drain(void)
             break;
         case C_PLAY:
             fade_target = a ? 1.0f : 0.0f;
+            if (!a && padc_on)
+                pad_chord_off();
             break;
         case C_DUCK:
             duck_to = a ? 0.0f : 1.0f;
@@ -1882,7 +1946,7 @@ static void drain(void)
             ld.amp = 0.0f;
             for (g = 0; g < DR_PAD_N; g++)
                 pv.v[g].lvl = pv.v[g].amp = 0.0f;
-            pv.live = 0;
+            pv.live = padc_on = 0;
             fx_clear();                          /* silence now: the echoes and the tail too */
             fade = fade_target = 0.0f;
             for (g = 0; g < DR_NGROUPS; g++)
@@ -3253,12 +3317,14 @@ static __attribute__((noinline)) void pv_run(uint32_t n)
         pv.s1[0] = pv.s1[1] = pv.s2[0] = pv.s2[1] = 0.0f;   /* (its tail is under the voices' release) */
 }
 
+static uint8_t pad_voices = 1;                   /* the voices too (0: the lead alone, as hand() -1 asks) */
 void dr_pad_run(void)
 {
     uint32_t j;
     for (j = 0; j < pad_k; j++)
         padl[j] = padr[j] = 0.0f;
-    pv_run(pad_k);
+    if (pad_voices)
+        pv_run(pad_k);
     lead_run(pad_k);                             /* the lead after the pad's filter: its own two */
 }
 
@@ -3280,7 +3346,8 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
         if (ld.gate || ld.amp > 0.0f || pv.live) {
             pad_k = k;
             pad = pad_hand ? pad_hand() : 0;
-            pad = pad == 1 ? 2 : pad == 0 ? 1 : 0;   /* 2 elsewhere, 1 here, 0 silent */
+            pad_voices = pad >= 0;
+            pad = pad == 1 ? 2 : 1;              /* 2 elsewhere, 1 here */
         }
         for (j = 0; j < k; j++)
             mixl[j] = mixr[j] = 0.0f;
