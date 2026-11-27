@@ -1020,6 +1020,7 @@ static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): w
 #define PV_GAIN 0.12f                          /* a voice at level 100, before its pan */
 typedef struct {
     float ph, note, gl, gr, lvl, amp;           /* gl, gr: the pan's gains; lvl: the level it goes to */
+    float nt, ns;                               /* a glide: the note it goes to, semitones a second (0: there) */
 } pv_t;
 static struct {
     pv_t v[DR_PAD_N];
@@ -1658,18 +1659,24 @@ static float snap_rel(int s) { return s < DR_SNAP_LEGATO ? 1.5f : s < DR_SNAP_PA
  * voice, centred); the more Thickness, the wider and the louder. A change's new notes come in on the other half of
  * the voices while the old ones release, so changes overlap. Thickness at 0 or under: no pad */
 #define PADC_N 7                                 /* a chord's voices: the bass, and a pair for each of three tones */
-static void pad_voice_set(int i, float note, float pan, float lvl)   /* (as dr_pad_voice, from drain) */
+static void pad_voice_set(int i, float note, float pan, float lvl, float glide)   /* (from drain) glide: s, 0 a jump */
 {
     pv_t *v = &pv.v[i];
     const float t = (pan + 1.0f) * (FM_PI * 0.25f);
-    v->note = note;
+    if (glide > 0.0f && v->amp > 0.0f) {        /* sounding: it glides there */
+        v->nt = note;
+        v->ns = fm_maxf(fm_fabsf(note - v->note), 0.01f) / glide;
+    } else {
+        v->note = v->nt = note;
+        v->ns = 0.0f;
+    }
     v->gl = fm_cosf(t);
     v->gr = fm_sinf(t);
     v->lvl = lvl;
     if (lvl > 0.0f)
         pv.live = 1;
 }
-static void pad_chord_set(void)                  /* the sounding half's notes, spread and levels, as Thickness says */
+static void pad_chord_set(float glide)          /* the sounding half's notes, spread and levels, as Thickness says */
 {
     const float t = (float)par[P_THICK] * 0.01f, det = 0.04f + 0.08f * t, sp = 0.4f + 0.5f * t;
     const float lvl = fm_minf(0.45f + 0.3f * t, 1.0f);
@@ -1679,29 +1686,39 @@ static void pad_chord_set(void)                  /* the sounding half's notes, s
     tone[0] = (float)(chs_main[0] + (chs_pon[0] ? chs_iv[0] : 0)) * 0.01f;
     tone[1] = (float)chs_main[1] * 0.01f;
     tone[2] = (float)(chs_main[1] + chs_iv[1]) * 0.01f;
-    pad_voice_set(v0, (float)chs_main[0] * 0.01f, 0.0f, lvl * 0.7f);
+    pad_voice_set(v0, (float)chs_main[0] * 0.01f, 0.0f, lvl * 0.7f, glide);
     for (k = 0; k < 3; k++) {
         const float on = k == 0 && !chs_pon[0] ? 0.0f : k == 2 && !chs_pon[1] ? 0.0f : lvl;
-        pad_voice_set(v0 + 1 + 2 * k, tone[k] - det, -sp, on);
-        pad_voice_set(v0 + 2 + 2 * k, tone[k] + det, sp, on);
+        pad_voice_set(v0 + 1 + 2 * k, tone[k] - det, -sp, on, glide);
+        pad_voice_set(v0 + 2 + 2 * k, tone[k] + det, sp, on, glide);
     }
 }
-static void pad_chord_off(void)                  /* the sounding half released */
+static void pad_chord_off(float rel)             /* the sounding half released, over rel s (0: as it was) */
 {
     int k;
+    if (rel > 0.0f)
+        pv.rel = 1.0f / rel;
     for (k = 0; k < PADC_N; k++)
         pv.v[padc_bank * (DR_PAD_N / 2) + k].lvl = 0.0f;
     padc_on = 0;
 }
-static void pad_chord(int on)                    /* a chord in (its notes on the other half) or let go */
+/* as Snap says: a wash or legato glides the sounding voices to the new notes (over the drones' time); a pad's change
+ * brings them in on the other half over its attack while the old release over its own (snap_att, snap_brel) */
+static void pad_chord(int on, int snap)          /* a chord in or let go */
 {
+    const int in = on && par[P_THICK] > 0 && fade_target > 0.0f;
+    if (in && padc_on && snap < DR_SNAP_PAD) {
+        pad_chord_set(snap_ms(snap) * 0.001f);
+        return;
+    }
     if (padc_on)
-        pad_chord_off();
-    if (!on || par[P_THICK] <= 0 || fade_target <= 0.0f)
+        pad_chord_off(snap >= DR_SNAP_PAD ? snap_brel(snap) : snap_rel(snap));
+    if (!in)
         return;
     padc_bank ^= 1u;
     padc_on = 1;
-    pad_chord_set();
+    pv.att = 1.0f / snap_att(snap);
+    pad_chord_set(0.0f);
 }
 static void chord_rest(int snap, int bass)
 {
@@ -1710,7 +1727,7 @@ static void chord_rest(int snap, int bass)
     cr.rest = cr.rp = 1;
     cr.bkr = (uint8_t)bass;
     if (padc_on)
-        pad_chord_off();
+        pad_chord_off(snap_rel(snap));
     cr.gr = -1.0f / (snap_rel(snap) * DR_SR);
     if (fade <= 0.0f)
         cr.g = cr.g0 = 0.0f;
@@ -1722,7 +1739,7 @@ static void chord_go(int on, int snap)            /* on: 0 let go, 1 the chord s
         return;
     }
     const int moved = cr.rest && !cr.rp;         /* after a rest, its notes already where they're going */
-    pad_chord(on);
+    pad_chord(on, snap);
     /* the same bass as before: it carries on through a pad's change, not released and in again */
     cr.bp = cr.b;
     cr.bk = (uint8_t)(on && ch_on && grp[0].con && fm_fabsf(grp[0].cp - (float)chs_main[0] * 0.01f) < 0.001f);
@@ -1833,11 +1850,11 @@ static void drain(void)
                 }
                 if (a == P_THICK && ch_on && !cr.rest) {   /* the pad follows: in, out, or wider */
                     if (par[a] <= 0 && padc_on)
-                        pad_chord_off();
+                        pad_chord_off(0.0f);
                     else if (par[a] > 0 && padc_on)
-                        pad_chord_set();
+                        pad_chord_set(0.0f);
                     else if (par[a] > 0 && fade_target > 0.0f)
-                        pad_chord(1);
+                        pad_chord(1, DR_SNAP_PAD);
                 }
                 if ((a >= P_WANDER && a <= P_SPACE) || live_on())
                     mac_dirty = 1;             /* an amount or a depth, or any value under a live macro (its moves
@@ -1885,7 +1902,7 @@ static void drain(void)
         case C_PLAY:
             fade_target = a ? 1.0f : 0.0f;
             if (!a && padc_on)
-                pad_chord_off();
+                pad_chord_off(0.0f);
             break;
         case C_DUCK:
             duck_to = a ? 0.0f : 1.0f;
@@ -1920,8 +1937,10 @@ static void drain(void)
         case C_PAD:
             if (a < PAD_G) {
                 pv_t *v = &pv.v[a >> 2];
-                if ((a & 3) == 0)
-                    v->note = (float)b * 0.01f;
+                if ((a & 3) == 0) {
+                    v->note = v->nt = (float)b * 0.01f;
+                    v->ns = 0.0f;
+                }
                 else if ((a & 3) == 1) {
                     const float t = (float)(b + 100) * (FM_PI * 0.25f / 100.0f);   /* 0 .. pi / 2 */
                     v->gl = fm_cosf(t);
@@ -3281,6 +3300,11 @@ static __attribute__((noinline)) void pv_run(uint32_t n)
             v->amp = v->lvl > a ? a + (v->lvl - a) * fm_minf(dt * pv.att, 1.0f)
                                 : fm_maxf(a - (a - v->lvl) * fm_minf(dt * pv.rel, 1.0f) - 1e-5f, v->lvl);
             da = (v->amp - a) * inv;
+            if (v->ns > 0.0f) {
+                const float st = v->ns * dt, d = v->nt - v->note;
+                v->note = d > st ? v->note + st : d < -st ? v->note - st : v->nt;
+                v->ns = v->note == v->nt ? 0.0f : v->ns;
+            }
             inc = note_inc(v->note);
             ph = v->ph;
             gl = v->gl * PV_GAIN;
