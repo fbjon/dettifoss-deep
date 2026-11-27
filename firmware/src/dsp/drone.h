@@ -288,6 +288,7 @@ void dr_chord_go(int on, int snap);
  * they're quiet the drones move to the notes sent since (dr_chord), so the next dr_chord_go comes in on them. A pad's
  * change keeping the bass's note carries it on, not released and in again */
 void dr_chord_rest(int snap, int bass);       /* bass: the bass goes on sounding through it */
+void dr_lead(int note_c, int gate);           /* the placeholder lead: a note (MIDI x 100), held (1) or let go (0) */
 #define DR_SNAP_LEGATO 34                      /* Snap's three parts: 0 .. 33 a wash, 34 .. 66 legato, 67 .. 100 a pad's */
 #define DR_SNAP_PAD 67                         /* attack (drone.c, snap_ms) */
 

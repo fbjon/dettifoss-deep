@@ -657,7 +657,7 @@ void dr_param_text(int i, int v, char *b)
 }
 
 /* -------------------------------------------------------------- commands --- */
-enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO };
+enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO, C_LEAD };
 /* a load (boot, project_apply) posts every value at once, before the render drains any: the queue holds
  * them all (at 64 the last values of a saved sound were dropped at start-up, the macros among them) */
 #define QN 128u
@@ -696,6 +696,7 @@ void dr_chord_rest(int snap, int bass)       /* (go's: 2 a rest, 3 one keeping t
 {
     post(C_CHORD_GO, snap < 0 ? 0 : snap > 100 ? 100 : snap, bass ? 3 : 2);
 }
+void dr_lead(int note_c, int gate) { post(C_LEAD, gate ? 1 : 0, note_c); }
 
 /* ----------------------------------------------------------------- state --- */
 volatile float dr_level[DR_NGROUPS];
@@ -984,11 +985,25 @@ static struct {
 } cr = {1.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0, 0, 0, 0};
 #define CH_REST_TAKE 0.3f                        /* how quiet before the notes move to the next chord */
 #define CH_REST_GLIDE 300.0f                     /* ... and over how long, ms */
+/* THE LEAD (a placeholder to play over the progression): one note at a time, two saws 7 cents apart, one to each
+ * side, each through a gentle low-pass that opens as the note swells and settles; held notes glide into each other
+ * (~70 ms), and a vibrato grows in. Not part of the sound or the project yet: no parameters, nothing saved */
+#define LD_LVL 0.25f
+typedef struct {
+    float note, pitch, amp, fpk, fenv, vib, vph, ph[2], ic1[2], ic2[2];
+    int gate;
+} ld_t;
+static ld_t ld;
+
 void dr_init(void)
 {
     int i, g;
     for (i = 0; i < DR_NGEST; i++)
         gam[i] = 0.0f;
+    {
+        static const ld_t none;
+        ld = none;
+    }
     mac_p[0] = mac_p[1] = mac_gp[0] = mac_gp[1] = 0.0f;
     macro_reset();
     for (i = 0; i < DR_NPARAMS; i++) {
@@ -1778,8 +1793,20 @@ static void drain(void)
             if (a < DR_NGROUPS)
                 grp[a].gtarget = b ? 1.0f : 0.0f;
             break;
+        case C_LEAD:
+            if (a && !ld.gate && ld.amp < 0.01f) {   /* from silence: the pitch there at once, the swell anew */
+                ld.pitch = (float)b * 0.01f;
+                ld.vib = 0.0f;
+            }
+            if (a && (!ld.gate || ld.amp < 0.3f))
+                ld.fpk = 1.0f;                 /* a new phrase opens the filter; a legato note doesn't */
+            ld.note = (float)b * 0.01f;
+            ld.gate = a;
+            break;
         case C_PANIC: {
             int g;
+            ld.gate = 0;
+            ld.amp = 0.0f;
             fx_clear();                          /* silence now: the echoes and the tail too */
             fade = fade_target = 0.0f;
             for (g = 0; g < DR_NGROUPS; g++)
@@ -1897,6 +1924,7 @@ static float note_inc(float n)                    /* phase increment (turns per 
 
 #define FRAMES_PER_DRIFT 8192u                    /* a new drift target every ~0.19 s */
 static float mixl[BLK], mixr[BLK];
+
 
 /* ------------------------------------------------------------ the LFO --- */
 static float lfo_tick[2][BLK / CR + 1];          /* each tap's value at each control tick of the block */
@@ -3032,6 +3060,55 @@ static void clean_hold(float *l, float *r, uint32_t k)
         }
 }
 
+static __attribute__((noinline)) void lead_run(uint32_t n)             /* into mixl / mixr, after the PLAY fade: it plays stopped too */
+{
+    uint32_t j0, j;
+    int i;
+    if (!ld.gate && ld.amp <= 0.0f)
+        return;
+    for (j0 = 0; j0 < n; j0 += CR) {
+        const uint32_t je = j0 + CR < n ? j0 + CR : n;
+        const float dt = (float)(je - j0) * (1.0f / DR_SR);
+        float a = ld.amp, da, vib, fc, g, a1, a2, a3, inc[2];
+        const float k = 1.25f;                 /* a little resonance */
+        ld.pitch += (ld.note - ld.pitch) * fm_minf(dt * (1.0f / 0.07f), 1.0f);
+        ld.vib = ld.gate ? fm_minf(ld.vib + dt * (1.0f / 0.9f), 1.0f) : ld.vib;
+        ld.vph += 5.2f * dt;
+        ld.vph -= ld.vph >= 1.0f ? 1.0f : 0.0f;
+        vib = 0.13f * ld.vib * ld.vib * fm_sinf(2.0f * FM_PI * ld.vph);   /* up to +-13 cents */
+        ld.fpk += (0.45f - ld.fpk) * fm_minf(dt * (1.0f / 1.6f), 1.0f);   /* the swell settling */
+        ld.fenv += ((ld.gate ? ld.fpk : 0.0f) - ld.fenv) * fm_minf(dt * (ld.gate ? 1.0f / 0.22f : 1.0f / 0.6f), 1.0f);
+        ld.amp = ld.gate ? ld.amp + (1.0f - ld.amp) * fm_minf(dt * (1.0f / 0.1f), 1.0f)
+                         : fm_maxf(ld.amp - ld.amp * dt * (1.0f / 0.45f) - 1e-5f, 0.0f);
+        da = (ld.amp - a) * (1.0f / (float)CR);
+        fc = 420.0f * fm_exp2f(2.7f * ld.fenv + (ld.pitch - 60.0f) * (1.0f / 24.0f));
+        g = fm_tanf(FM_PI * fm_minf(fc, 0.4f * DR_SR) * (1.0f / DR_SR));
+        a1 = 1.0f / (1.0f + g * (g + k));
+        a2 = g * a1;
+        a3 = g * a2;
+        inc[0] = note_inc(ld.pitch + vib - 0.07f);
+        inc[1] = note_inc(ld.pitch + vib + 0.07f);
+        for (j = j0; j < je; j++) {
+            float y[2];
+            for (i = 0; i < 2; i++) {
+                const float x = xosc(DR_SAW, 0.0f, ld.ph[i], inc[i], 0.5f), v3 = x - ld.ic2[i];
+                const float v1 = a1 * ld.ic1[i] + a2 * v3, v2 = ld.ic2[i] + a2 * ld.ic1[i] + a3 * v3;
+                ld.ic1[i] = 2.0f * v1 - ld.ic1[i];
+                ld.ic2[i] = 2.0f * v2 - ld.ic2[i];
+                ld.ph[i] = advance(ld.ph[i], inc[i]);
+                y[i] = v2;
+            }
+            a += da;
+            mixl[j] += a * LD_LVL * (0.8f * y[0] + 0.2f * y[1]);
+            mixr[j] += a * LD_LVL * (0.2f * y[0] + 0.8f * y[1]);
+        }
+        for (i = 0; i < 2; i++) {
+            ld.ic1[i] = fm_flush(ld.ic1[i]);
+            ld.ic2[i] = fm_flush(ld.ic2[i]);
+        }
+    }
+}
+
 void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
 {
     /* MASTER: a volume up to 4/5 of its turn (there as loud as the old full turn); past that it drives the
@@ -3089,10 +3166,11 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
             mixl[j] *= a;
             mixr[j] *= a;
         }
+        lead_run(k);
         /* the effects, after the fade: the tails ring on when stopped. Stopped, and silent (below -120 dB)
          * for longer than the delay's line (743 ms: an echo still in it would have come out by then), they
          * rest until PLAY */
-        if (fade > 0.0f || fade_target > 0.0f || fx_quiet < 160u) {
+        if (fade > 0.0f || fade_target > 0.0f || fx_quiet < 160u || ld.gate || ld.amp > 0.0f) {
             float pk = 0.0f;
             DR_FAR(fx_run)(mixl, mixr, k);
             clean_hold(mixl, mixr, k);

@@ -131,6 +131,7 @@ static const char *const names[] = {
     "the same, under a chord, gliding to it",
     "the same, the live macros up (Motion breathing)",
     "the same, a pad's change every 0.25 s (bridge voices full)",
+    "the same, the lead held (two saws, two filters)",
 };
 #define NCASES ((int)(sizeof names / sizeof names[0]))
 
@@ -175,10 +176,18 @@ static void setup(int c)
         dr_chord(1, 6000, 400, 1);
         dr_chord_go(1, DR_SNAP_PAD);
         break;
+    case 12:                                                        /* ... and the placeholder lead on top */
+        drone(1, 2, 2);
+        dr_set(P_REV_TYPE, 4);
+        dr_chord(0, 4500, 700, 1);
+        dr_chord(1, 6000, 400, 1);
+        dr_chord_go(1, DR_SNAP_PAD);
+        dr_lead(7200, 1);
+        break;
     }
 }
 
-static void pad_render(int32_t *out, uint32_t n, uint32_t gain)   /* case 11: a new chord every 43 blocks */
+static void pad_render(int32_t *out, uint32_t n, uint32_t gain)   /* cases 11, 12: a new chord every 43 blocks */
 {
     static uint32_t b;
     if (++b % 43u == 0) {
@@ -204,14 +213,14 @@ int main(int argc, char **argv)
         if (c < 0 || c >= NCASES)
             return 2;
         setup(c);
-        cost(c == 11 ? pad_render : dr_render, &ns);
+        cost(c >= 11 ? pad_render : dr_render, &ns);
         printf("%s\n", names[c]);
         return 0;
     }
     printf("drone cost, host instructions per 44.1 kHz sample (device estimate 1.7 %% per 100):\n");
     for (c = 0; c < NCASES; c++) {
         setup(c);
-        ipc = cost(c == 11 ? pad_render : dr_render, &ns);
+        ipc = cost(c >= 11 ? pad_render : dr_render, &ns);
         report(names[c], ipc, ns, limit(c));
     }
     printf(bad ? "drone cost: OVER LIMIT\n" : "drone cost: ok\n");

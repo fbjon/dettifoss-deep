@@ -18,8 +18,8 @@
  * extension away first, then the third, then the fifth. Dark-Bright past +-50 moves the upper two tones an octave
  * (back inside +-40).
  *
- * THE PROGRESSION (HOME on the Live page; HOME again: the chords): a progression's chords stepped through, the keys
- * above free for a lead (not yet):
+ * THE PROGRESSION (HOME on the Live page; HOME again: the chords): a progression's chords stepped through, a lead
+ * on the keys above:
  *
  *   F3 / F#3       the next / the previous chord, both always lit, taking turns at full each 0.5 s. Two ways
  *                  (SEL + F3): REST: a tap steps; held, the chord is released, and letting go brings in the next
@@ -28,6 +28,7 @@
  *                  While a chord rests the drones move to the next one's notes, so it comes in on them
  *   G5             BASS: the bass sounding held under the chords that follow, through rests too (lit), till tapped
  *                  again
+ *   G3 .. F#5      the lead (a placeholder): one note at a time, the last key pressed; held notes glide
  *   OCT, the knobs, ALGORITHM   as on the Live page
  *
  * SEL + HOME, on either, opens Niagara Drift's Drones and Pitch pages (again: the other), till the sound has its own.
@@ -43,6 +44,8 @@ static const char *const LV_PC[12] = {"C", "Db", "D", "Eb", "E", "F", "F#", "G",
 #define LV_LOW 41                              /* F3's root: its bass F2 (MIDI) */
 #define PG_NEXT 0                              /* F3 */
 #define PG_PREV 1                              /* F#3 */
+#define PG_LEAD0 2                             /* G3 .. F#5: the lead (keys 2 .. 25) */
+#define PG_NLEAD 24
 typedef struct { int8_t root; uint8_t mods; } pg_chord_t;
 static const pg_chord_t PG_DEMO[] = {{7, 0}, {4, 1u << LM_MIN}, {0, 1u << LM_MIN | 1u << LM_MAJ7}, {2, 1u << LM_MIN | 1u << LM_7},
                                      {7, 1u << LM_MIN | 1u << LM_7}};
@@ -76,7 +79,10 @@ static struct {
                                                 * held), 2 the root (the bass held) */
     uint8_t croot;                             /* Q and R: the chord's root, a pitch class (C 0), for its name */
     char cname[16];                            /* ... its name */
-} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, ""};
+    int8_t lead[PG_NLEAD];                     /* the progression: the lead's keys held, the last pressed last */
+    uint8_t nlead;
+    int8_t lnote;                              /* ... the note sounding or last sounded, MIDI */
+} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, "", {0}, 0, 0};
 
 /* THE THREE WAYS TO PLAY CHORDS (SEL on the Live page goes round them):
  *   P  roots and modifiers, as above
@@ -327,9 +333,36 @@ static void pg_rest(int next)                  /* released, the drones moving to
     dr_chord_rest(lv.snap, lv.pbass >= 0);     /* (a held bass sounds on through it) */
     lv.rest = 1;
 }
+static void pg_lead(uint32_t keys, uint32_t ch)   /* the lead: one note, the last key pressed of those held */
+{
+    int k, i, j;
+    for (k = PG_LEAD0; k < PG_LEAD0 + PG_NLEAD; k++) {
+        if (!(ch >> k & 1u))
+            continue;
+        for (i = j = 0; i < lv.nlead; i++)     /* (out of the list, pressed or let go) */
+            if (lv.lead[i] != k)
+                lv.lead[j++] = lv.lead[i];
+        lv.nlead = (uint8_t)j;
+        if (keys >> k & 1u)
+            lv.lead[lv.nlead++] = (int8_t)k;
+    }
+    if (lv.nlead) {
+        lv.lnote = (int8_t)(53 + lv.lead[lv.nlead - 1]);
+        dr_lead(lv.lnote * 100, 1);
+    } else if (lv.lnote)
+        dr_lead(lv.lnote * 100, 0);
+}
+static void pg_lead_off(void)                  /* the page left: the lead let go */
+{
+    lv.nlead = 0;
+    if (lv.lnote)
+        dr_lead(lv.lnote * 100, 0);
+}
 static void pg_keys(uint32_t keys, uint32_t ch)
 {
     int k;
+    if (ch & (((1u << PG_NLEAD) - 1u) << PG_LEAD0))
+        pg_lead(keys, ch);
     if ((ch & keys) >> LV_BASS_K & 1u) {       /* G5: the bass sounding held under the next chords, or let go */
         if (lv.pbass >= 0) {
             const int was = lv.bass;
@@ -374,6 +407,7 @@ static void pg_keys(uint32_t keys, uint32_t ch)
 static void live_home(void)                    /* HOME: back to the Live page as it was, and on it the other */
 {
     lv.to = -1;
+    pg_lead_off();
     if (ui.view == V_LIVE)
         lv.prog ^= 1u;
     else
@@ -619,7 +653,8 @@ static int live_led(int k)                     /* a key's light on the page, 0..
     int m;
     if (lv.prog)                               /* the progression: next and previous, taking turns at full */
         return k == LV_BASS_K ? (lv.pbass >= 0 ? 255 : 0)
-                              : k > PG_PREV ? 0 : (int)(plat_ms() / 500u & 1u) == k ? 255 : 96;
+               : k > PG_PREV ? (lv.nlead && k == lv.lead[lv.nlead - 1] ? 255 : 0)
+                             : (int)(plat_ms() / 500u & 1u) == k ? 255 : 96;
     if (lv.mode == LV_R)                       /* R: the chord's keys */
         return lv.root >= 0 && (lv.rkeys >> k & 1u) ? 255 : 0;
     if (lv.mode == LV_Q && (LV_ZQ >> k & 1u))  /* Q: the shape's keys (none yet: a major triad's, dim) */
