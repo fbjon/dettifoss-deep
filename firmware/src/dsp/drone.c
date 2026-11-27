@@ -1017,7 +1017,7 @@ static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): w
                                                 * by this one only while no block is handed over (drain) */
 /* THE PAD PATH'S VOICES (drone.h): set by drain, the rest by the core that renders them. pv_live: how many sound,
  * as the last block left them (or a level just set), read here at the next block's start */
-#define PV_GAIN 0.12f                          /* a voice at level 100, before its pan */
+#define PV_GAIN 0.2f                          /* a voice at level 100, before its pan */
 typedef struct {
     float ph, note, gl, gr, lvl, amp;           /* gl, gr: the pan's gains; lvl: the level it goes to */
     float nt, ns;                               /* a glide: the note it goes to, semitones a second (0: there) */
@@ -1557,6 +1557,12 @@ static void macro_apply(uint32_t n)              /* the offsets again, n samples
         off[DR_GP(1, GP_LEVEL)] += (float)(base[DR_GP(0, GP_LEVEL)] - base[DR_GP(1, GP_LEVEL)]);
         for (k = 0; k < DR_NGROUPS; k++)
             off[DR_GP(k, GP_FLFO_DEPTH)] -= (float)base[DR_GP(k, GP_FLFO_DEPTH)] * (2.0f / 3.0f);
+        if (base[P_THICK] > 0) {                 /* Thickness's pad in (pad_chord): the drones make room, the upper
+                                                  * most (Frej, 2026-11-27: the pad under the high drone at 100) */
+            const float t = (float)base[P_THICK] * 0.01f;
+            off[DR_GP(1, GP_LEVEL)] -= 0.3f * t * ((float)base[DR_GP(1, GP_LEVEL)] + off[DR_GP(1, GP_LEVEL)]);   /* -6 dB */
+            off[DR_GP(0, GP_LEVEL)] -= 0.1f * t * ((float)base[DR_GP(0, GP_LEVEL)] + off[DR_GP(0, GP_LEVEL)]);   /* -2 dB */
+        }
     }
     dk_mk = base[P_DARK] < 0 ? fm_exp2f(AGE_MK * (1.0f / 6.0206f) * (float)base[P_DARK] * -0.01f) : 1.0f;
     for (m = 0; m < 4; m++) {                    /* THE LIVE MACROS: where each knob is */
@@ -1680,7 +1686,7 @@ static void pad_voice_set(int i, float note, float pan, float lvl, float glide) 
 static void pad_chord_set(float glide)          /* the sounding half's notes, spread and levels, as Thickness says */
 {
     const float t = (float)par[P_THICK] * 0.01f, det = 0.04f + 0.08f * t, sp = 0.4f + 0.5f * t;
-    const float lvl = fm_minf(0.45f + 0.3f * t, 1.0f);
+    const float lvl = fm_minf(0.5f + 0.5f * t, 1.0f);
     const int v0 = padc_bank * (DR_PAD_N / 2);
     float tone[3];
     int k;
