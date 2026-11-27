@@ -132,7 +132,7 @@ static const char *const names[] = {
     "the same, the live macros up (Motion breathing)",
     "the same, a pad's change every 0.25 s (bridge voices full)",
     "the same, the lead held (two saws, two filters)",
-    "the pad path alone: 48 voices, its filter, the lead",
+    "the pad path alone: 48 voices, its filter, the chorus, the lead",
 };
 #define NCASES ((int)(sizeof names / sizeof names[0]))
 
@@ -191,6 +191,7 @@ static void setup(int c)
         drone(1, 2, 0);
         dr_play(0);
         dr_panic();
+        dr_pad_kind(1);                                             /* (Wide saws: the chorus in) */
         dr_pad_filter(9000, 50);
         for (i = 0; i < DR_PAD_N; i++)
             dr_pad_voice(i, 4800 + 100 * i + (i & 1 ? 7 : -7), i & 1 ? 60 : -60, 60);

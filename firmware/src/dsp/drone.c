@@ -1034,9 +1034,20 @@ static struct {
     float att, rel;                             /* per second: 1 / the time */
     float fc, fct, k, s1[2], s2[2];             /* the filter: its cutoff (a note) gliding to fct, 1 / Q, states */
     float fco;                                  /* ... moved by Dark and the LFO (pad_follow), semitones */
+    float chm, cht, chph, chl;                  /* the chorus (pv_chorus): its mix gliding to cht, the LFO's phase, value */
+    uint32_t chw;                               /* ... where the line is written next */
     int live;
 } pv __attribute__((aligned(32)));
+/* THE PAD'S INSERT, a chorus in the old string machines' way: the pad's two sides summed into one short line, read at
+ * two taps a sine LFO moves against each other (3.5 ms +-1.7 ms, 0.5 Hz), one tap added to each side; the sum
+ * taken down by a tenth of the mix, so the level holds (within 0.3 dB on Wide and Felt). One line of 256 (5.8 ms,
+ * 1 KB) */
+#define PV_CH_N 256u
+#define PV_CH_D0 (0.0035f * DR_SR)
+#define PV_CH_DD (0.0017f * DR_SR)
+static float pv_chd[PV_CH_N] __attribute__((aligned(32)));
 static uint8_t padc_bank, padc_on;               /* Thickness's pad (pad_chord): the half sounding, whether it plays */
+static uint8_t pad_kind;                         /* ... its kind (PAD_KIND, below) */
 static void pv_reset(void)
 {
     static const pv_t none;
@@ -1053,6 +1064,11 @@ static void pv_reset(void)
     pv.k = 1.4f;
     pv.s1[0] = pv.s1[1] = pv.s2[0] = pv.s2[1] = 0.0f;
     pv.live = 0;
+    pv.chm = pv.cht = pv.chph = pv.chl = 0.0f;
+    pv.chw = 0;
+    pad_kind = 0;
+    for (i = 0; i < (int)PV_CH_N; i++)
+        pv_chd[i] = 0.0f;
     padc_bank = padc_on = 0;
 }
 
@@ -1685,21 +1701,21 @@ typedef struct {
 typedef struct {
     padsec_t sec[4];
     uint8_t n;
-    float fc, k;
+    float fc, k, ch;                             /* ch: the chorus's mix, 0 none */
 } padkind_t;
 static const padkind_t PAD_KIND[DR_PAD_KINDS] = {
     /* 0: saws: the bass one, each other tone a pair */
-    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.7f}, {DR_SAW, 14, 2, 0, 0.04f, 0.08f, 1.0f}}, 2, 96.0f, 1.4f},
+    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.7f}, {DR_SAW, 14, 2, 0, 0.04f, 0.08f, 1.0f}}, 2, 96.0f, 1.4f, 0.0f},
     /* 1: WIDE SAWS (the synthesis recipes'): four saws a tone, an octave of triangles over the tones, a sine under
      * the bass */
     {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.5f}, {DR_SAW, 14, 4, 0, 0.06f, 0.05f, 0.45f},
-      {DR_TRI, 14, 2, 1, 0.03f, 0.02f, 0.3f}, {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.6f}}, 4, 90.0f, 1.6f},
+      {DR_TRI, 14, 2, 1, 0.03f, 0.02f, 0.3f}, {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.6f}}, 4, 90.0f, 1.6f, 0.5f},
     /* 2: FELT (the recipes' felt and air, its body): warm triangles, a pair a tone, a sine under the bass, the filter
      * low */
     {{{DR_TRI, 1, 1, 0, 0.0f, 0.0f, 0.56f}, {DR_TRI, 14, 2, 0, 0.04f, 0.03f, 0.77f},
-      {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.56f}}, 3, 81.0f, 1.8f},
+      {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.56f}}, 3, 81.0f, 1.8f, 0.35f},
 };
-static uint8_t pad_kind, padc_nv;                /* the kind; how many voices the sounding half has */
+static uint8_t padc_nv;                          /* how many voices the sounding half has */
 static void pad_voice_set(int i, int wave, float note, float pan, float lvl, float glide)   /* (from drain) glide: s */
 {
     pv_t *v = &pv.v[i];
@@ -2023,6 +2039,7 @@ static void drain(void)
                 pad_kind = (uint8_t)b;
                 pv.fct = PAD_KIND[b].fc;
                 pv.k = PAD_KIND[b].k;
+                pv.cht = PAD_KIND[b].ch;
                 if (padc_on)
                     pad_chord_set(0.0f);
             }
@@ -3347,6 +3364,41 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into p
     }
 }
 
+/* the chorus, on padl / padr in place; nothing while it's out */
+static __attribute__((noinline)) void pv_chorus(uint32_t n)
+{
+    uint32_t j0, j, w = pv.chw;
+    if (pv.chm <= 0.0f && pv.cht <= 0.0f)
+        return;
+    for (j0 = 0; j0 < n; j0 += CR) {
+        const uint32_t je = j0 + CR < n ? j0 + CR : n;
+        const float dt = (float)(je - j0) * (1.0f / DR_SR), inv = 1.0f / (float)(je - j0);
+        float m = pv.chm, l = pv.chl, dm, dl;
+        pv.chm += (pv.cht - pv.chm) * fm_minf(dt * (1.0f / 0.05f), 1.0f);   /* (a kind's change: 50 ms) */
+        pv.chm = pv.chm < 1e-4f && pv.cht <= 0.0f ? 0.0f : pv.chm;
+        pv.chph += 0.5f * dt;
+        pv.chph -= pv.chph >= 1.0f ? 1.0f : 0.0f;
+        pv.chl = fm_sinf(2.0f * FM_PI * pv.chph);
+        dm = (pv.chm - m) * inv;
+        dl = (pv.chl - l) * inv;
+        for (j = j0; j < je; j++) {
+            const float da = PV_CH_D0 + PV_CH_DD * l, db = PV_CH_D0 - PV_CH_DD * l;
+            const uint32_t ia = (uint32_t)da, ib = (uint32_t)db;
+            const float fa = da - (float)ia, fb = db - (float)ib;
+            const float a0 = pv_chd[(w - ia) & (PV_CH_N - 1u)], a1 = pv_chd[(w - ia - 1u) & (PV_CH_N - 1u)];
+            const float b0 = pv_chd[(w - ib) & (PV_CH_N - 1u)], b1 = pv_chd[(w - ib - 1u) & (PV_CH_N - 1u)];
+            const float g = 1.0f - 0.1f * m;
+            pv_chd[w] = 0.5f * (padl[j] + padr[j]);
+            w = (w + 1u) & (PV_CH_N - 1u);
+            padl[j] = g * (padl[j] + m * (a0 + fa * (a1 - a0)));
+            padr[j] = g * (padr[j] + m * (b0 + fb * (b1 - b0)));
+            m += dm;
+            l += dl;
+        }
+    }
+    pv.chw = w;
+}
+
 /* the voices into padl / padr, then the stereo low-pass (one set of coefficients, two states) */
 static __attribute__((noinline)) void pv_run(uint32_t n)
 {
@@ -3404,6 +3456,7 @@ static __attribute__((noinline)) void pv_run(uint32_t n)
             pv.s2[i] = fm_flush(s2);
         }
     }
+    pv_chorus(n);
     pv.live = live;
     if (!live)
         pv.s1[0] = pv.s1[1] = pv.s2[0] = pv.s2[1] = 0.0f;   /* (its tail is under the voices' release) */
