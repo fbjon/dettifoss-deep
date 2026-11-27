@@ -130,7 +130,8 @@ def product_of(raw):
     """the package identity ("FM-1_906"): one marker byte after each of the first 20 blocks"""
     if len(raw) < BLOCKS * BLK:
         raise InstallError("badpkg", "not an FM-1 package (too short)")
-    return "".join(chr((m - i - 1) & 0xFF) for i in range(BLOCKS) if (m := raw[i * BLK + KEEP]) != 0x7D)
+    marks = (raw[i * BLK + KEEP] for i in range(BLOCKS))
+    return "".join(chr((m - i - 1) & 0xFF) for i, m in enumerate(marks) if m != 0x7D)
 
 
 def logical_image(raw):
@@ -142,7 +143,8 @@ def logical_image(raw):
 
 
 def model_of(text):
-    return text.split("_")[0].removeprefix("ota-")
+    m = text.split("_")[0]
+    return m[4:] if m.startswith("ota-") else m
 
 
 # ------------------------------------------------------------------ MIDI ---
@@ -255,7 +257,10 @@ def nd_transact(link, cmd, body, want, tries=3):
         if not link.send(nd_msg(cmd, body)):
             raise InstallError("lost", "FM-1 disconnected")
         end = time.monotonic() + DELAY["backup"]
-        while (left := end - time.monotonic()) > 0:
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                break
             r = nd_reply(link.read(left), cmd)
             if r is not None and want(r):
                 return r
@@ -349,7 +354,10 @@ def nd_restore(link, objs, out, on_ask=lambda: None):
         raise InstallError("lost", "restore: the FM-1 didn't ask: nothing changed")
     on_ask()
     end = time.monotonic() + 70.0            # (it asks for a minute)
-    while (left := end - time.monotonic()) > 0:
+    while True:
+        left = end - time.monotonic()
+        if left <= 0:
+            break
         r = nd_reply(link.read(left), 0x75)
         if not r or r[0] == 0xFF:
             continue
@@ -401,7 +409,10 @@ def handshake(link, tries=3):
         if not link.send(HS_QUERY):
             return None
         end = time.monotonic() + DELAY["hs"]
-        while (left := end - time.monotonic()) > 0:
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                break
             p = link.read(left)
             if p is None:
                 break
