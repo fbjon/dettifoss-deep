@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the Lead page (SELECT to page 4): the lead's Sound follows the Preset until one is chosen (Glass here: it stays
+# when the PRESET encoder moves on), and back to the Preset's; Glide, Vibrato, Press; stopped, all kept after a restart.
+expect lead_sound 0
+expect lead_kind 0
+expect lead_glide 70
+expect lead_vib 100
+expect lead_press 100
+tap PLAY
+wait 500
+turn PRESET 2
+wait 100
+expect lead_kind 2
+kpage 3
+turn K1 2
+wait 100
+expect lead_sound 2
+expect lead_kind 1
+turn PRESET -2
+wait 100
+expect lead_kind 1
+turn K1 -5
+wait 100
+expect lead_sound 0
+expect lead_kind 0
+turn K1 3
+turn K2 -3
+turn K3 5
+turn K4 -10
+expect lead_glide 40
+expect lead_vib 150
+expect lead_press 0
+expect lead_kind 2
+tap PLAY
+wait 16000
+expect store_writes 1
+reboot
+wait 500
+expect lead_sound 3
+expect lead_kind 2
+expect lead_glide 40
+expect lead_vib 150
+expect lead_press 0

@@ -233,6 +233,7 @@ static void live_page_turn(int32_t e);
 static int live_page(void);
 static void live_run(void);
 static void live_restore(void);
+static void live_lead_kind(int k);
 static int live_led(int k);
 static int live_oct_lit(int up);
 static int live_knob(int i, int32_t e);
@@ -1204,7 +1205,7 @@ static void scene_recall(int n, int keep)              /* a white key: morph the
         undo_keep();
     if (preset_pad(proj.bank, n) >= 0) {           /* a Preset's pad and lead */
         dr_pad_kind(preset_pad(proj.bank, n));
-        dr_lead_kind(preset_pad(proj.bank, n));
+        live_lead_kind(preset_pad(proj.bank, n));
     }
     for (k = 0; k < DR_NPARAMS; k++) {
         ui.morph_from[k] = proj.par[k];
@@ -1229,7 +1230,7 @@ static void scene_play(int bank, int n)
         return;
     if (preset_pad(bank, n) >= 0) {
         dr_pad_kind(preset_pad(bank, n));
-        dr_lead_kind(preset_pad(bank, n));
+        live_lead_kind(preset_pad(bank, n));
     }
     for (k = 0; k < DR_NPARAMS; k++) {
         ui.morph_from[k] = proj.par[k];

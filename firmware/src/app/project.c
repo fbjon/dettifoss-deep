@@ -256,6 +256,13 @@ static void bankx_blank(bank8_t *b)
     b->format = PROJ_FORMAT;
 }
 
+static void player_lead_defaults(void)         /* the Lead page's: the lead as each Preset has it */
+{
+    proj.pl.lsnd = 0;
+    proj.pl.lglide = 7;                        /* 70 ms */
+    proj.pl.lvib = 100;
+    proj.pl.lpress = 100;
+}
 static void player_defaults(void)              /* the Live pages' settings as at the start */
 {
     memset(&proj.pl, 0, sizeof proj.pl);
@@ -266,6 +273,7 @@ static void player_defaults(void)              /* the Live pages' settings as at
     proj.pl.abpm = 90;
     proj.pl.adiv = 1;                          /* eighths */
     proj.pl.alen = 40;
+    player_lead_defaults();
 }
 
 void project_defaults(void)
@@ -1101,6 +1109,10 @@ int project_load(void)
     if (from <= 25u || proj.mtime > 100u)    /* the byte was the macro PRESETS played */
         proj.mtime = MTIME_DEF;
     memset(proj.gkey_old, 0, sizeof proj.gkey_old);
+    if (proj.pl.set == 1u) {                   /* saved before the lead's: those as at the start */
+        player_lead_defaults();
+        proj.pl.set = PLAYER_SET;
+    }
     if (proj.pl.set != PLAYER_SET)             /* saved before the player's settings: as at the start */
         player_defaults();
     if (!in_range(proj.par)) {

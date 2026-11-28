@@ -95,8 +95,10 @@ static struct {
     uint8_t lpress;                            /* the lead's key's pressure, as last sent */
     uint8_t arp, abpm, adiv, apat, alen;       /* the arp: on; its tempo, division, pattern, length (the engine's too) */
     uint8_t page;                              /* the knobs' page (SELECT): KP_PLAY .. KP_MIX */
+    uint8_t lsnd, lpk;                         /* the lead's Sound (0 the Preset's, 1.. a kind + 1); the Preset's kind */
+    uint8_t lglide, lvib, lpr;                 /* ... its Glide (10 ms), Vibrato, Press (%) */
 } lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, "", {0}, 0, 0, 0,
-        0, 0, 0, 90, 1, 0, 40, 0};
+        0, 0, 0, 90, 1, 0, 40, 0, 0, 0, 7, 100, 100};
 
 /* THE THREE WAYS TO PLAY CHORDS (the chords' Keys, CHORDS' KNOB 4; a SEL tap on the Live page goes round them):
  *   P  roots and modifiers, as above
@@ -446,7 +448,9 @@ static void pg_keys(uint32_t keys, uint32_t ch)
  *   2 CHORDS   Snap, Height (the top note), Spread (how far down the others reach), the chords' Keys P / Q / R (on the
  *              progression its Way, REST / HOLD)
  *   3 ARP      Tempo, Division, Pattern, Length (as ARP held, from any page)
- *   4 LEAD, 5 MIX   to come
+ *   4 LEAD     the lead's Sound (the Preset's, or Swell, Glass, Reed whatever the Preset), Glide, Vibrato, Press
+ *              (how much the key's pressure opens the filter and deepens the vibrato)
+ *   5 MIX      to come
  * SELECT stops at either end (a quick turn left: PLAY); HOME on another page back to PLAY. The page is the Live
  * page's and the progression's both */
 enum { KP_PLAY, KP_CHORDS, KP_ARP, KP_LEAD, KP_MIX, KP_N };
@@ -751,6 +755,42 @@ static void lv_way(int hold)                   /* the progression's way: 0 REST,
     lv.hold = (uint8_t)hold;
     say("PROGRESSION", lv.hold ? "HOLD TO PLAY" : "HOLD TO REST");
 }
+/* THE LEAD PAGE: the lead's Sound (the Preset's kind, or one chosen whatever the Preset), Glide, Vibrato, Press */
+#define LV_GLIDE_HI 100                        /* Glide: up to 1 s, in 10 ms */
+static const char *const LEAD_NAME[DR_LEAD_KINDS] = {"Swell", "Glass", "Reed"};
+static void live_lead_kind(int k)              /* a Preset's lead kind (-1: not a Preset's, the last one stays) */
+{
+    if (k >= 0 && k < DR_LEAD_KINDS)
+        lv.lpk = (uint8_t)k;
+    dr_lead_kind(lv.lsnd ? lv.lsnd - 1 : lv.lpk);
+}
+static int lv_step(int v, int32_t e, int d, int hi) /* v moved e detents of d, held in 0..hi */
+{
+    v += (int)e * d;
+    return v < 0 ? 0 : v > hi ? hi : v;
+}
+static void live_lead_knob(int i, int32_t e)
+{
+    switch (i) {
+    case 0:
+        lv.lsnd = (uint8_t)lv_step(lv.lsnd, e > 0 ? 1 : -1, 1, DR_LEAD_KINDS);
+        live_lead_kind(-1);
+        break;
+    case 1:
+        lv.lglide = (uint8_t)lv_step(lv.lglide, e, 1, LV_GLIDE_HI);
+        dr_lead_set(0, lv.lglide * 10);
+        break;
+    case 2:
+        lv.lvib = (uint8_t)lv_step(lv.lvib, e, 10, 200);
+        dr_lead_set(1, lv.lvib);
+        break;
+    default:
+        lv.lpr = (uint8_t)lv_step(lv.lpr, e, 10, 200);
+        dr_lead_set(2, lv.lpr);
+        break;
+    }
+}
+
 static int live_knob(int i, int32_t e)         /* a knob on a page but PLAY (PLAY's are the macros: 0) */
 {
     int v;
@@ -761,7 +801,11 @@ static int live_knob(int i, int32_t e)         /* a knob on a page but PLAY (PLA
         ui.glab_until = 0;                     /* (the cards say it) */
         return 1;
     case KP_CHORDS: break;
-    default: return 1;                         /* LEAD, MIX: to come */
+    case KP_LEAD:
+        live_lead_knob(i, e);
+        ui.glab_until = 0;
+        return 1;
+    default: return 1;                         /* MIX: to come */
     }
     if (i == 0) {
         live_snap(e);
@@ -802,7 +846,9 @@ static uint32_t live_sig(void)                 /* what the knobs' cards show of 
     return (uint32_t)(uint8_t)lv.height | (uint32_t)(uint8_t)lv.spread << 8 | (uint32_t)lv.mode << 16 |
            (uint32_t)lv.prog << 18 | (uint32_t)lv.hold << 19 | (uint32_t)(uint8_t)lv.top << 7 | (uint32_t)lv.page << 20 |
            (uint32_t)(dr_ext_spb > 0.0f) << 23 | ((uint32_t)lv.snap << 24 ^
-           ((uint32_t)lv.abpm | (uint32_t)lv.adiv << 8 | (uint32_t)lv.apat << 12 | (uint32_t)lv.alen << 16) * 2654435761u);
+           ((uint32_t)lv.abpm | (uint32_t)lv.adiv << 8 | (uint32_t)lv.apat << 12 | (uint32_t)lv.alen << 16 |
+            (uint32_t)lv.lsnd << 24 | (uint32_t)lv.lpk << 27) * 2654435761u ^
+           ((uint32_t)lv.lglide | (uint32_t)lv.lvib << 8 | (uint32_t)lv.lpr << 16) * 40503u);
 }
 static int live_mode(void) { return lv.prog ? -1 : lv.mode; }
 
@@ -879,7 +925,26 @@ static void lk_live_card(int i, int32_t x, int32_t cx, int on)
         itoa_u(lv.alen, t);
         frac = lv.alen;
         break;
-    default:                                   /* LEAD, MIX: to come */
+    case KP_LEAD * 4:
+        scopy(t, LEAD_NAME[lv.lsnd ? lv.lsnd - 1 : lv.lpk]);
+        sub = lv.lsnd ? "own" : "preset's";
+        break;
+    case KP_LEAD * 4 + 1:
+        itoa_u(lv.lglide * 10u, t);
+        sub = "ms";
+        break;
+    case KP_LEAD * 4 + 2:
+    case KP_LEAD * 4 + 3:
+        {
+            const uint8_t v = i == 2 ? lv.lvib : lv.lpr;
+            if (v)
+                itoa_u(v, t);
+            else
+                scopy(t, "Off");
+            sub = v ? "%" : "";
+        }
+        break;
+    default:                                   /* MIX: to come */
         scopy(t, "N/A");
         dim = 1;
         break;
@@ -923,12 +988,21 @@ static void live_restore(void)
     dr_arp_set(1, lv.adiv);
     dr_arp_set(2, lv.apat);
     dr_arp_set(3, lv.alen);
+    lv.lsnd = proj.pl.lsnd <= DR_LEAD_KINDS ? proj.pl.lsnd : 0u;
+    lv.lglide = proj.pl.lglide > LV_GLIDE_HI ? LV_GLIDE_HI : proj.pl.lglide;
+    lv.lvib = proj.pl.lvib > 200 ? 200 : proj.pl.lvib;
+    lv.lpr = proj.pl.lpress > 200 ? 200 : proj.pl.lpress;
+    live_lead_kind(lv.lpk);
+    dr_lead_set(0, lv.lglide * 10);
+    dr_lead_set(1, lv.lvib);
+    dr_lead_set(2, lv.lpr);
 }
 static void live_keep(void)
 {
     if (proj.pl.snap == lv.snap && proj.pl.mode == lv.mode && proj.pl.hold == lv.hold && proj.pl.height == lv.height &&
         proj.pl.spread == lv.spread && proj.pl.oct == lv.oct && proj.pl.loct == lv.loct && proj.pl.abpm == lv.abpm &&
-        proj.pl.adiv == lv.adiv && proj.pl.apat == lv.apat && proj.pl.alen == lv.alen)
+        proj.pl.adiv == lv.adiv && proj.pl.apat == lv.apat && proj.pl.alen == lv.alen && proj.pl.lsnd == lv.lsnd &&
+        proj.pl.lglide == lv.lglide && proj.pl.lvib == lv.lvib && proj.pl.lpress == lv.lpr)
         return;
     proj.pl.snap = lv.snap;
     proj.pl.mode = lv.mode;
@@ -941,6 +1015,10 @@ static void live_keep(void)
     proj.pl.adiv = lv.adiv;
     proj.pl.apat = lv.apat;
     proj.pl.alen = lv.alen;
+    proj.pl.lsnd = lv.lsnd;
+    proj.pl.lglide = lv.lglide;
+    proj.pl.lvib = lv.lvib;
+    proj.pl.lpress = lv.lpr;
     mark_dirty();
 }
 
