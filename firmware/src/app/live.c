@@ -9,7 +9,7 @@
  *   G5             BASS: a tap arms it (blinking), then a root key sets the bass apart from the chord's root (a
  *                  slash chord); the bass holds under chord changes until the lit Bass is tapped again
  *   SEL + the lit root   the chord let go: the drones back to the sound's own pitches
- *   OCT- / OCT+    the chords an octave down / up (-1 .. +1)
+ *   OCT- / OCT+    the chords an octave down / up (-1 .. +1), the one lit where they are
  *   KNOB 1-4       on the PLAY page Dark-Bright, Thickness, Motion, Space (the live macros, a sound's)
  *   SELECT         the knobs' pages: PLAY, CHORDS, ARP, LEAD, MIX (below)
  *   PRESETS        the sound: P1 DETTIFOSS, P2 WIDE, P3 FELT, each with its pad, gliding there; the knobs stay
@@ -575,7 +575,15 @@ static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
     }
 }
 
-static int live_lh(void) { return live_q() ? lv.lh : -1; }   /* Q: the left hand's, for OCT's lights */
+static int live_oct_lit(int up)                /* OCT's lights on the page: Q the left hand's (OCT- the bass alone, OCT+
+                                                * the root alone); else the octave, the lead's on the progression (OCT-
+                                                * lit an octave down, OCT+ up, both dark as the keys) */
+{
+    const int o = lv.prog ? lv.loct : lv.oct;
+    if (live_q())
+        return lv.lh == (up ? 2 : 1);
+    return up ? o > 0 : o < 0;
+}
 static void live_oct(int up)                   /* OCT- / OCT+ on the page: the register; Q: the left hand's; the
                                                 * progression: the lead's */
 {

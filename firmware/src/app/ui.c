@@ -233,7 +233,7 @@ static void live_page_turn(int32_t e);
 static int live_page(void);
 static void live_run(void);
 static int live_led(int k);
-static int live_lh(void);
+static int live_oct_lit(int up);
 static int live_knob(int i, int32_t e);
 static void live_sel(void);
 
@@ -2455,9 +2455,10 @@ static void leds(void)
         b[B_OCTDN] = still ? LED_DIM : wave_lvl(dr_lfo[0]);
     if (proj.par[P_LFO_W2])
         b[B_OCTUP] = still ? LED_DIM : wave_lvl(dr_lfo[1]);
-    if (ui.view == V_LIVE && live_lh() >= 0) {        /* Q: OCT- the bass alone, OCT+ the root alone, lit */
-        b[B_OCTDN] = live_lh() == 1 ? 255 : 0;
-        b[B_OCTUP] = live_lh() == 2 ? 255 : 0;
+    if (ui.view == V_LIVE) {                           /* the Live page: OCT's state (the octave; Q: the left hand),
+                                                        * not the LFO's waves */
+        b[B_OCTDN] = live_oct_lit(0) ? 255 : 0;
+        b[B_OCTUP] = live_oct_lit(1) ? 255 : 0;
     }
     if (proj.par[P_PULSE]) {                           /* ARP: breathing with the swell, a beat a breath; stopped,
                                                         * still */
