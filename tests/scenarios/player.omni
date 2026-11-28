@@ -1,0 +1,23 @@
+# the Live pages' settings are the player's, saved with the project: Snap (CHORDS' KNOB 1), the chords' Keys (a SEL
+# tap: Q), the arp's Tempo (ARP's KNOB 1). Stopped, they save by themselves once settled; after a restart they're as
+# left, on the PLAY page.
+expect snap 50
+expect keys 0
+expect arp_bpm 90
+turn SELECT 1
+turn K1 -6
+expect snap 20
+tap SEL
+expect keys 1
+turn SELECT 1
+expect kpage 2
+turn K1 10
+expect arp_bpm 100
+wait 8000
+expect store_writes 1
+reboot
+wait 500
+expect snap 20
+expect keys 1
+expect arp_bpm 100
+expect kpage 0

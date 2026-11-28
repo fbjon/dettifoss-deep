@@ -869,6 +869,48 @@ static void lk_live_card(int i, int32_t x, int32_t cx, int on)
         lk_dots(cx, 70, (float)frac / 100.0f, LK_G, 0);
 }
 
+/* THE PLAYER'S SETTINGS (the project's pl): taken up at the start, kept as they change (each frame: whatever moved
+ * them), saved with the project */
+static void live_restore(void)
+{
+    const int c = proj.pl.height;
+    lv.page = KP_PLAY;                         /* (the start: on PLAY) */
+    lv.snap = proj.pl.snap > 100 ? 100 : proj.pl.snap;
+    lv.mode = proj.pl.mode < LV_NMODE ? proj.pl.mode : LV_P;
+    lv.hold = proj.pl.hold ? 1u : 0u;
+    lv.height = (int8_t)(c < LV_H_LO ? LV_H_LO : c > LV_H_HI ? LV_H_HI : c);
+    lv.spread = (int8_t)(proj.pl.spread < 0 ? 0 : proj.pl.spread > LV_S_HI ? LV_S_HI : proj.pl.spread);
+    lv.oct = (int8_t)(proj.pl.oct < -1 ? -1 : proj.pl.oct > 1 ? 1 : proj.pl.oct);
+    lv.loct = (int8_t)(proj.pl.loct < -1 ? -1 : proj.pl.loct > 1 ? 1 : proj.pl.loct);
+    lv.abpm = proj.pl.abpm < DR_ARP_BPM_MIN ? DR_ARP_BPM_MIN : proj.pl.abpm > DR_ARP_BPM_MAX ? DR_ARP_BPM_MAX : proj.pl.abpm;
+    lv.adiv = proj.pl.adiv < DR_ARP_NDIV ? proj.pl.adiv : 1u;
+    lv.apat = proj.pl.apat < DR_ARP_NPAT ? proj.pl.apat : 0u;
+    lv.alen = proj.pl.alen > 100 ? 100 : proj.pl.alen;
+    dr_arp_set(0, lv.abpm);
+    dr_arp_set(1, lv.adiv);
+    dr_arp_set(2, lv.apat);
+    dr_arp_set(3, lv.alen);
+}
+static void live_keep(void)
+{
+    if (proj.pl.snap == lv.snap && proj.pl.mode == lv.mode && proj.pl.hold == lv.hold && proj.pl.height == lv.height &&
+        proj.pl.spread == lv.spread && proj.pl.oct == lv.oct && proj.pl.loct == lv.loct && proj.pl.abpm == lv.abpm &&
+        proj.pl.adiv == lv.adiv && proj.pl.apat == lv.apat && proj.pl.alen == lv.alen)
+        return;
+    proj.pl.snap = lv.snap;
+    proj.pl.mode = lv.mode;
+    proj.pl.hold = lv.hold;
+    proj.pl.height = lv.height;
+    proj.pl.spread = lv.spread;
+    proj.pl.oct = lv.oct;
+    proj.pl.loct = lv.loct;
+    proj.pl.abpm = lv.abpm;
+    proj.pl.adiv = lv.adiv;
+    proj.pl.apat = lv.apat;
+    proj.pl.alen = lv.alen;
+    mark_dirty();
+}
+
 static void live_run(void)                     /* each frame: the lead's pressure; Dark-Bright's octave for the
                                                 * upper tones */
 {
@@ -882,6 +924,7 @@ static void live_run(void)                     /* each frame: the lead's pressur
         }
     } else
         lv.lpress = 0;                         /* (let go, the engine's back at 0) */
+    live_keep();
     if (live_qr())                             /* (Q and R: Height places the tones) */
         return;
     r = d >= 50 ? 1 : d <= -50 ? -1 : (lv.reg > 0 && d > 40) || (lv.reg < 0 && d < -40) ? lv.reg : 0;

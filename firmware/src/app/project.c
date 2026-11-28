@@ -256,6 +256,18 @@ static void bankx_blank(bank8_t *b)
     b->format = PROJ_FORMAT;
 }
 
+static void player_defaults(void)              /* the Live pages' settings as at the start */
+{
+    memset(&proj.pl, 0, sizeof proj.pl);
+    proj.pl.set = PLAYER_SET;
+    proj.pl.snap = 50;
+    proj.pl.height = 60;                       /* C4 */
+    proj.pl.spread = 12;
+    proj.pl.abpm = 90;
+    proj.pl.adiv = 1;                          /* eighths */
+    proj.pl.alen = 40;
+}
+
 void project_defaults(void)
 {
     int i;
@@ -267,6 +279,7 @@ void project_defaults(void)
     proj.leds = 1;
     proj.mtime = MTIME_DEF;
     proj.seen[1] = SEEN1_MOVED;
+    player_defaults();
     bank_blank(&bank_bc[0]);
     bank_blank(&bank_bc[1]);
     for (i = 0; i < 3; i++)
@@ -1088,6 +1101,8 @@ int project_load(void)
     if (from <= 25u || proj.mtime > 100u)    /* the byte was the macro PRESETS played */
         proj.mtime = MTIME_DEF;
     memset(proj.gkey_old, 0, sizeof proj.gkey_old);
+    if (proj.pl.set != PLAYER_SET)             /* saved before the player's settings: as at the start */
+        player_defaults();
     if (!in_range(proj.par)) {
         project_defaults();
         return -1;
