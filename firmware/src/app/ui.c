@@ -232,6 +232,7 @@ static void live_oct(int up);
 static void live_page_turn(int32_t e);
 static int live_page(void);
 static void live_run(void);
+static void live_restore(void);
 static int live_led(int k);
 static int live_oct_lit(int up);
 static int live_knob(int i, int32_t e);
@@ -2559,6 +2560,7 @@ void ui_init(void)
     ui.jack = dr_phones = (uint8_t)plat_headphones();
     ui.save_q = -2;
     ui.splash_t0 = plat_ms();
+    live_restore();                                    /* the Live pages' settings, as saved */
     lcd_fill(0, 0, 240, 240, K_BG);
 }
 

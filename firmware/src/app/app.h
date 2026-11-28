@@ -76,7 +76,19 @@ typedef struct {
     uint8_t rsv[4];                      /* room to grow: an older, shorter project loads (zeros here) */
     uint16_t scene_used;                 /* bank A: bit n, scene n holds a sound */
     int16_t scene[NSCENES][DR_NPARAMS];  /* bank A: every parameter, recalled but for the room's settings */
+    struct {                             /* THE PLAYER'S SETTINGS on the Live pages (live.c), none of them a sound's: a
+                                          * project from before them is shorter and loads with zeros here, so "set"
+                                          * says they hold values (PLAYER_SET), else they start as the defaults */
+        uint8_t set;
+        uint8_t snap;                    /* Snap, 0..100 */
+        uint8_t mode;                    /* the chords' Keys: 0 P, 1 Q, 2 R */
+        uint8_t hold;                    /* the progression's Way: 0 REST, 1 HOLD */
+        int8_t height, spread;           /* Q and R's window: its middle (MIDI), its spread (semitones) */
+        int8_t oct, loct;                /* the chords' octave, the lead's (-1 .. 1) */
+        uint8_t abpm, adiv, apat, alen;  /* the arp's Tempo, Division, Pattern, Length */
+    } pl;
 } project_t;
+#define PLAYER_SET 1u
 _Static_assert(sizeof(project_t) <= PLAT_STORE_MAX, "the project must fit one flash object");
 
 typedef struct {                         /* banks B and C, and the Presets saved over (before 2026-10-19): an object each */

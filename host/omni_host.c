@@ -454,6 +454,15 @@ static int expect(const char *what, const char *val)
         got = ui_restore_answer();
     else if (!strcmp(what, "playing"))
         got = ui.playing;
+    else if (!strcmp(what, "snap"))                /* the Live pages' settings: Snap, the chords' Keys (0 P), the arp's
+                                                    * tempo, the knobs' page */
+        got = lv.snap;
+    else if (!strcmp(what, "keys"))
+        got = lv.mode;
+    else if (!strcmp(what, "arp_bpm"))
+        got = lv.abpm;
+    else if (!strcmp(what, "kpage"))
+        got = lv.page;
     else if (!strcmp(what, "fade"))                /* the PLAY fade x 100 */
         got = (int)(dr_fade * 100.0f + 0.5f);
     else if (!strcmp(what, "view"))
