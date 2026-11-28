@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the Mix page over the progression page's chord at Thickness 80 with
+# the arp on: as the sound has it, then the drones -12 dB, the pad off, the arp +6 dB, and back to 0 one by one.
+# Not a test of its own.
+notips
+tap PLAY
+wait 1500
+tap HOME
+set 87 80
+tap ARP
+wait 600
+tapkey 0
+wait 2000
+kpage 4
+wav mix.wav
+wait 2000
+turn K1 -12
+wait 2000
+turn K2 -40
+wait 2000
+shot mix-page.png
+turn K4 6
+wait 2000
+turn K1 12
+turn K2 31
+turn K4 -6
+wait 2000
+wavstop

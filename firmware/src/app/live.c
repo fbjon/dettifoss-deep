@@ -97,8 +97,9 @@ static struct {
     uint8_t page;                              /* the knobs' page (SELECT): KP_PLAY .. KP_MIX */
     uint8_t lsnd, lpk;                         /* the lead's Sound (0 the Preset's, 1.. a kind + 1); the Preset's kind */
     uint8_t lglide, lvib, lpr;                 /* ... its Glide (10 ms), Vibrato, Press (%) */
+    int8_t mix[4];                             /* the Mix page: the drones', pad's, lead's, arp's levels (dB, -31 off) */
 } lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, "", {0}, 0, 0, 0,
-        0, 0, 0, 90, 1, 0, 40, 0, 0, 0, 7, 100, 100};
+        0, 0, 0, 90, 1, 0, 40, 0, 0, 0, 7, 100, 100, {0, 0, 0, 0}};
 
 /* THE THREE WAYS TO PLAY CHORDS (the chords' Keys, CHORDS' KNOB 4; a SEL tap on the Live page goes round them):
  *   P  roots and modifiers, as above
@@ -450,7 +451,8 @@ static void pg_keys(uint32_t keys, uint32_t ch)
  *   3 ARP      Tempo, Division, Pattern, Length (as ARP held, from any page)
  *   4 LEAD     the lead's Sound (the Preset's, or Swell, Glass, Reed whatever the Preset), Glide, Vibrato, Press
  *              (how much the key's pressure opens the filter and deepens the vibrato)
- *   5 MIX      to come
+ *   5 MIX      the drones', the pad's, the lead's and the arp's levels, each in dB over its own (0 as the sound has
+ *              it), down to off
  * SELECT stops at either end (a quick turn left: PLAY); HOME on another page back to PLAY. The page is the Live
  * page's and the progression's both */
 enum { KP_PLAY, KP_CHORDS, KP_ARP, KP_LEAD, KP_MIX, KP_N };
@@ -756,6 +758,7 @@ static void lv_way(int hold)                   /* the progression's way: 0 REST,
     say("PROGRESSION", lv.hold ? "HOLD TO PLAY" : "HOLD TO REST");
 }
 /* THE LEAD PAGE: the lead's Sound (the Preset's kind, or one chosen whatever the Preset), Glide, Vibrato, Press */
+#define LV_MIX_OFF 31                          /* the Mix page: -31 dB is off */
 #define LV_GLIDE_HI 100                        /* Glide: up to 1 s, in 10 ms */
 static const char *const LEAD_NAME[DR_LEAD_KINDS] = {"Swell", "Glass", "Reed"};
 static void live_lead_kind(int k)              /* a Preset's lead kind (-1: not a Preset's, the last one stays) */
@@ -805,7 +808,15 @@ static int live_knob(int i, int32_t e)         /* a knob on a page but PLAY (PLA
         live_lead_knob(i, e);
         ui.glab_until = 0;
         return 1;
-    default: return 1;                         /* MIX: to come */
+    default:                                   /* MIX: a layer's level, a dB a detent (under -30: off) */
+        v = lv.mix[i] + (int)e;
+        v = v < -LV_MIX_OFF ? -LV_MIX_OFF : v > 6 ? 6 : v;
+        if (lv.mix[i] == -LV_MIX_OFF && e > 0)  /* (off, up: from -30) */
+            v = -30 + (int)e - 1;
+        lv.mix[i] = (int8_t)v;
+        dr_mix(i, v);
+        ui.glab_until = 0;
+        return 1;
     }
     if (i == 0) {
         live_snap(e);
@@ -848,6 +859,8 @@ static uint32_t live_sig(void)                 /* what the knobs' cards show of 
            (uint32_t)(dr_ext_spb > 0.0f) << 23 | ((uint32_t)lv.snap << 24 ^
            ((uint32_t)lv.abpm | (uint32_t)lv.adiv << 8 | (uint32_t)lv.apat << 12 | (uint32_t)lv.alen << 16 |
             (uint32_t)lv.lsnd << 24 | (uint32_t)lv.lpk << 27) * 2654435761u ^
+           ((uint32_t)(uint8_t)lv.mix[0] | (uint32_t)(uint8_t)lv.mix[1] << 8 | (uint32_t)(uint8_t)lv.mix[2] << 16 |
+            (uint32_t)(uint8_t)lv.mix[3] << 24) * 2246822519u ^
            ((uint32_t)lv.lglide | (uint32_t)lv.lvib << 8 | (uint32_t)lv.lpr << 16) * 40503u);
 }
 static int live_mode(void) { return lv.prog ? -1 : lv.mode; }
@@ -944,9 +957,20 @@ static void lk_live_card(int i, int32_t x, int32_t cx, int on)
             sub = v ? "%" : "";
         }
         break;
-    default:                                   /* MIX: to come */
-        scopy(t, "N/A");
-        dim = 1;
+    default:                                   /* MIX */
+        {
+            const int d = lv.mix[i];
+            if (d <= -LV_MIX_OFF)
+                scopy(t, "Off");
+            else {
+                if (d > 0)
+                    scopy(t, "+");
+                if (d < 0)
+                    scopy(t, "-");
+                itoa_u((uint32_t)(d < 0 ? -d : d), lv_end(t));
+                sub = "dB";
+            }
+        }
         break;
     }
     if (on && !dim) {
@@ -972,6 +996,7 @@ static void lk_live_card(int i, int32_t x, int32_t cx, int on)
 static void live_restore(void)
 {
     const int c = proj.pl.height;
+    int k;
     lv.page = KP_PLAY;                         /* (the start: on PLAY) */
     lv.snap = proj.pl.snap > 100 ? 100 : proj.pl.snap;
     lv.mode = proj.pl.mode < LV_NMODE ? proj.pl.mode : LV_P;
@@ -996,13 +1021,19 @@ static void live_restore(void)
     dr_lead_set(0, lv.lglide * 10);
     dr_lead_set(1, lv.lvib);
     dr_lead_set(2, lv.lpr);
+    for (k = 0; k < 4; k++) {
+        const int d = proj.pl.mix[k];
+        lv.mix[k] = (int8_t)(d < -LV_MIX_OFF ? -LV_MIX_OFF : d > 6 ? 6 : d);
+        dr_mix(k, lv.mix[k]);
+    }
 }
 static void live_keep(void)
 {
     if (proj.pl.snap == lv.snap && proj.pl.mode == lv.mode && proj.pl.hold == lv.hold && proj.pl.height == lv.height &&
         proj.pl.spread == lv.spread && proj.pl.oct == lv.oct && proj.pl.loct == lv.loct && proj.pl.abpm == lv.abpm &&
         proj.pl.adiv == lv.adiv && proj.pl.apat == lv.apat && proj.pl.alen == lv.alen && proj.pl.lsnd == lv.lsnd &&
-        proj.pl.lglide == lv.lglide && proj.pl.lvib == lv.lvib && proj.pl.lpress == lv.lpr)
+        proj.pl.lglide == lv.lglide && proj.pl.lvib == lv.lvib && proj.pl.lpress == lv.lpr &&
+        !memcmp(proj.pl.mix, lv.mix, sizeof lv.mix))
         return;
     proj.pl.snap = lv.snap;
     proj.pl.mode = lv.mode;
@@ -1019,6 +1050,7 @@ static void live_keep(void)
     proj.pl.lglide = lv.lglide;
     proj.pl.lvib = lv.lvib;
     proj.pl.lpress = lv.lpr;
+    memcpy(proj.pl.mix, lv.mix, sizeof lv.mix);
     mark_dirty();
 }
 

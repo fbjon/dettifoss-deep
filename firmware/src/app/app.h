@@ -88,6 +88,8 @@ typedef struct {
         uint8_t abpm, adiv, apat, alen;  /* the arp's Tempo, Division, Pattern, Length */
         uint8_t lsnd;                    /* the lead's Sound: 0 the Preset's, 1 Swell, 2 Glass, 3 Reed */
         uint8_t lglide, lvib, lpress;    /* ... its Glide (10 ms), Vibrato and Press (%) */
+        int8_t mix[4];                   /* the Mix page: the drones', pad's, lead's, arp's levels, dB over their own
+                                          * (0, so a project from before them loads as it sounded); -31 off */
     } pl;
 } project_t;
 #define PLAYER_SET 2u                    /* (1: saved before the lead's, which start as the defaults) */

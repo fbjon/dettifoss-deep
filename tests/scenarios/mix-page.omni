@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the Mix page (SELECT to page 5): each layer's level a dB a detent, +6 at most, off under -30 and back from there;
+# stopped, kept after a restart.
+expect mix0 0
+expect mix3 0
+kpage 4
+turn K1 -6
+turn K2 10
+turn K3 -40
+expect mix0 -6
+expect mix1 6
+expect mix2 -31
+turn K3 1
+expect mix2 -30
+turn K3 -1
+wait 16000
+expect store_writes 1
+reboot
+wait 500
+expect mix0 -6
+expect mix1 6
+expect mix2 -31
+expect mix3 0

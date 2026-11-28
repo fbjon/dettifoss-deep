@@ -657,7 +657,7 @@ void dr_param_text(int i, int v, char *b)
 }
 
 /* -------------------------------------------------------------- commands --- */
-enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO, C_LEAD, C_PAD, C_ARP };
+enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO, C_LEAD, C_PAD, C_ARP, C_MIX };
 /* a load (boot, project_apply) posts every value at once, before the render drains any: the queue holds
  * them all (at 64 the last values of a saved sound were dropped at start-up, the macros among them) */
 #define QN 128u
@@ -699,6 +699,11 @@ void dr_chord_rest(int snap, int bass)       /* (go's: 2 a rest, 3 one keeping t
 void dr_lead(int note_c, int gate) { post(C_LEAD, gate ? 1 : 0, note_c); }
 void dr_lead_kind(int kind) { post(C_LEAD, 2, kind < 0 || kind >= DR_LEAD_KINDS ? 0 : kind); }
 void dr_lead_press(int p) { post(C_LEAD, 3, p < 0 ? 0 : p > 127 ? 127 : p); }
+void dr_mix(int what, int db)
+{
+    if (what >= 0 && what < 4)
+        post(C_MIX, what, db < -31 ? -31 : db > 6 ? 6 : db);
+}
 void dr_lead_set(int what, int v)
 {
     if (what >= 0 && what < 3)
@@ -1049,6 +1054,10 @@ typedef struct {
 } ld_t;
 static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): written by the core that renders it,
                                                 * by this one only while no block is handed over (drain) */
+/* THE MIX (the Mix page, dr_mix): each layer's level over its own, gliding there over ~50 ms a block at a time (the
+ * drones' within the block too); 1 exactly when untouched, so nothing changes until it's turned */
+enum { MX_DRONES, MX_PAD, MX_LEAD, MX_ARP, MX_N };
+static float mx_t[MX_N] = {1.0f, 1.0f, 1.0f, 1.0f}, mx[MX_N] = {1.0f, 1.0f, 1.0f, 1.0f};
 static float ld_glk = 1.0f / 0.07f, ld_vibk = 1.0f, ld_presk = 1.0f;   /* the player's (the Lead page, dr_lead_set):
                                                 * 1 / the glide (s), the vibrato's and the pressure's share */
 /* THE ARP: the chord's tones in the octave over the bass, one at a time in a pattern, each a plucked note (a quick
@@ -2123,6 +2132,9 @@ static void drain(void)
                 if (padc_on)
                     pad_chord_set(0.0f);
             }
+            break;
+        case C_MIX:                            /* a layer's level: 0 dB its own; -31 off */
+            mx_t[a] = b == 0 ? 1.0f : b <= -31 ? 0.0f : fm_exp2f((float)b * (1.0f / 6.0206f));
             break;
         case C_ARP:
             if (a == 255)
@@ -3418,6 +3430,7 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into p
         const uint32_t je = j0 + CR < n ? j0 + CR : n;
         const float dt = (float)(je - j0) * (1.0f / DR_SR);
         float a = ld.amp, da, vib, fc, g, a1, a2, a3, pr, inc[LD_N];
+        const float lg = LD_LVL * K->lvl * mx[MX_LEAD];
         const float k = K->k;
         ld.pitch += (ld.note - ld.pitch) * fm_minf(dt * ld_glk, 1.0f);
         ld.vib = ld.gate ? fm_minf(ld.vib + dt * (1.0f / K->vin), 1.0f) : ld.vib;
@@ -3450,8 +3463,8 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into p
                 r = i ? r + K->gr[i] * v2 : K->gr[i] * v2;
             }
             a += da;
-            padl[j] += a * (LD_LVL * K->lvl) * l;
-            padr[j] += a * (LD_LVL * K->lvl) * r;
+            padl[j] += a * lg * l;
+            padr[j] += a * lg * r;
         }
         for (i = 0; i < no; i++) {
             ld.ic1[i] = fm_flush(ld.ic1[i]);
@@ -3599,8 +3612,8 @@ static __attribute__((noinline)) void pv_run(uint32_t n)
             }
             inc = note_inc(v->note);
             ph = v->ph;
-            gl = v->gl * PV_GAIN;
-            gr = v->gr * PV_GAIN;
+            gl = v->gl * (PV_GAIN * mx[MX_PAD]);
+            gr = v->gr * (PV_GAIN * mx[MX_PAD]);
             for (j = j0; j < je; j++) {
                 const float x = osc(v->wave, ph, inc, 0.5f);
                 a += da;
@@ -3692,7 +3705,7 @@ static void arp_follow(void)                     /* the arp's tones and its beat
     {                                            /* Length 0 .. 100: a decay of a twentieth of a step .. 2.5 steps */
         const float l = (float)ar.len * 0.01f, steps = 0.05f + 2.5f * l * l;
         ar.dec = 1.0f / (steps / (ar.inc * DR_SR) + 0.02f);
-        ar.g = AR_LVL * AR_G[pad_kind] / fm_sqrtf(1.0f + steps);  /* (as long tails pile up: about the same loudness) */
+        ar.g = AR_LVL * AR_G[pad_kind] / fm_sqrtf(1.0f + steps) * mx[MX_ARP];  /* (as long tails pile up: about the same loudness) */
     }
 }
 
@@ -3718,7 +3731,12 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
     while (n) {
         uint32_t k = n > BLK ? BLK : n, j;
         int g, pad = 0;                          /* the pad path: off, handed over (1), here (0 .. as hand()) */
-        float frate = fade_rate();
+        float frate = fade_rate(), md = mx[MX_DRONES], mds;
+        for (g = 0; g < MX_N; g++) {             /* the mix toward where it's set, before the pad path's hand-over */
+            const float d = mx_t[g] - mx[g];
+            mx[g] = d > -2e-4f && d < 2e-4f ? mx_t[g] : mx[g] + d * fm_minf((float)k * (1.0f / (0.05f * DR_SR)), 1.0f);
+        }
+        mds = (mx[MX_DRONES] - md) * (1.0f / (float)k);
         if (ld.gate || ld.amp > 0.0f || pv.live || (ar.on && ch_on) || ar.live) {
             pad_k = k;
             pad_follow();
@@ -3768,6 +3786,12 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
             mixl[j] *= a;
             mixr[j] *= a;
         }
+        if (mds != 0.0f || md != 1.0f)           /* the Mix page's Drones (untouched: nothing to do) */
+            for (j = 0; j < k; j++) {
+                md += mds;
+                mixl[j] *= md;
+                mixr[j] *= md;
+            }
         if (pad == 2 && pad_wait() != 0)
             pad = 0;                             /* dropped: silent this block */
         else if (pad == 1)

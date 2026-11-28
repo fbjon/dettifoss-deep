@@ -474,6 +474,8 @@ static int expect(const char *what, const char *val)
         got = lv.lvib;
     else if (!strcmp(what, "lead_press"))
         got = lv.lpr;
+    else if (!strncmp(what, "mix", 3) && what[3] >= '0' && what[3] <= '3')   /* the Mix page: a layer's level, dB */
+        got = lv.mix[what[3] - '0'];
     else if (!strcmp(what, "top"))                 /* the chord's top note, MIDI; its notes (0 the bass) */
         got = lv.top;
     else if (!strncmp(what, "note", 4) && what[4] >= '0' && what[4] <= '3')
