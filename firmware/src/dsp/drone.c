@@ -699,6 +699,11 @@ void dr_chord_rest(int snap, int bass)       /* (go's: 2 a rest, 3 one keeping t
 void dr_lead(int note_c, int gate) { post(C_LEAD, gate ? 1 : 0, note_c); }
 void dr_lead_kind(int kind) { post(C_LEAD, 2, kind < 0 || kind >= DR_LEAD_KINDS ? 0 : kind); }
 void dr_lead_press(int p) { post(C_LEAD, 3, p < 0 ? 0 : p > 127 ? 127 : p); }
+void dr_lead_set(int what, int v)
+{
+    if (what >= 0 && what < 3)
+        post(C_LEAD, 4 + what, v < 0 ? 0 : v > (what ? 200 : 1000) ? (what ? 200 : 1000) : v);
+}
 void dr_arp(int on) { post(C_ARP, 255, on ? 1 : 0); }
 void dr_arp_set(int what, int v) { post(C_ARP, what & 3, v); }
 /* the pad path's (C_PAD: a = voice * 4 + what, or PAD_G + what for the whole path) */
@@ -1020,7 +1025,8 @@ static struct {
 /* THE LEAD (to play over the progression): one note at a time, two or three oscillators, each through its own gentle
  * low-pass that opens as the note swells and settles; held notes glide into each other (~70 ms), and a vibrato grows
  * in. A key's pressure opens the filters further and deepens the vibrato. Its kind is a Preset's (dr_lead_kind, as
- * the pad's): not saved, no parameters yet */
+ * the pad's); how long its glide, how deep its vibrato and how much the pressure does are the player's (the Lead
+ * page: dr_lead_set) */
 #define LD_LVL 0.25f
 #define LD_N 3
 typedef struct {
@@ -1049,6 +1055,8 @@ typedef struct {
 } ld_t;
 static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): written by the core that renders it,
                                                 * by this one only while no block is handed over (drain) */
+static float ld_glk = 1.0f / 0.07f, ld_vibk = 1.0f, ld_presk = 1.0f;   /* the player's (the Lead page, dr_lead_set):
+                                                * 1 / the glide (s), the vibrato's and the pressure's share */
 /* THE ARP: the chord's tones in the octave over the bass, one at a time in a pattern, each a plucked note (a quick
  * attack, a decay as long as Length says, a low-pass closing with it, a little quieter up high) on four voices in
  * turn, so tails overlap; the steps on
@@ -2062,6 +2070,14 @@ static void drain(void)
             }
             if (a == 3) {                      /* the pressure */
                 ld.prt = (float)b * (1.0f / 127.0f);
+                break;
+            }
+            if (a == 4) {                      /* the player's: Glide (none: there at once) */
+                ld_glk = b ? 1000.0f / (float)b : 1e9f;
+                break;
+            }
+            if (a >= 5) {                      /* ... Vibrato, Press */
+                *(a == 5 ? &ld_vibk : &ld_presk) = (float)b * 0.01f;
                 break;
             }
             if (a && !ld.gate && ld.amp < 0.01f) {   /* from silence: the pitch there at once, the swell anew */
@@ -3427,20 +3443,21 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into p
     for (j0 = 0; j0 < n; j0 += CR) {
         const uint32_t je = j0 + CR < n ? j0 + CR : n;
         const float dt = (float)(je - j0) * (1.0f / DR_SR);
-        float a = ld.amp, da, vib, fc, g, a1, a2, a3, inc[LD_N];
+        float a = ld.amp, da, vib, fc, g, a1, a2, a3, pr, inc[LD_N];
         const float k = K->k;
-        ld.pitch += (ld.note - ld.pitch) * fm_minf(dt * (1.0f / 0.07f), 1.0f);
+        ld.pitch += (ld.note - ld.pitch) * fm_minf(dt * ld_glk, 1.0f);
         ld.vib = ld.gate ? fm_minf(ld.vib + dt * (1.0f / K->vin), 1.0f) : ld.vib;
         ld.press += (ld.prt - ld.press) * fm_minf(dt * (1.0f / 0.05f), 1.0f);
+        pr = ld.press * ld_presk;
         ld.vph += 5.2f * dt;
         ld.vph -= ld.vph >= 1.0f ? 1.0f : 0.0f;
-        vib = (K->vib * ld.vib * ld.vib + 0.25f * ld.press) * fm_sinf(2.0f * FM_PI * ld.vph);   /* pressed: +25 c */
+        vib = (K->vib * ld.vib * ld.vib * ld_vibk + 0.25f * pr) * fm_sinf(2.0f * FM_PI * ld.vph);   /* pressed: +25 c */
         ld.fpk += (0.45f - ld.fpk) * fm_minf(dt * (1.0f / 1.6f), 1.0f);   /* the swell settling */
         ld.fenv += ((ld.gate ? ld.fpk : 0.0f) - ld.fenv) * fm_minf(dt * (ld.gate ? 1.0f / 0.22f : 1.0f / 0.6f), 1.0f);
         ld.amp = ld.gate ? ld.amp + (1.0f - ld.amp) * fm_minf(dt * (1.0f / K->att), 1.0f)
                          : fm_maxf(ld.amp - ld.amp * dt * (1.0f / K->rel) - 1e-5f, 0.0f);
         da = (ld.amp - a) * (1.0f / (float)CR);
-        fc = K->f0 * fm_exp2f(K->fenv * ld.fenv + (ld.pitch - 60.0f) * (1.0f / 24.0f) + 1.5f * ld.press);
+        fc = K->f0 * fm_exp2f(K->fenv * ld.fenv + (ld.pitch - 60.0f) * (1.0f / 24.0f) + 1.5f * pr);
         g = fm_tanf(FM_PI * fm_minf(fc, 0.4f * DR_SR) * (1.0f / DR_SR));
         a1 = 1.0f / (1.0f + g * (g + k));
         a2 = g * a1;

@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the Lead page (SELECT to page 4) on the progression page over a chord:
+# a legato phrase with a pressed note, as each Preset has it (P1 Swell: Glide 70 ms, Vibrato and Press 100 %); then
+# Glide 400 ms; Vibrato 200 %, Press 0; and Sound Reed over P1. Not a test of its own.
+notips
+tap PLAY
+wait 1500
+tap HOME
+wait 600
+tapkey 0
+wait 1500
+kpage 3
+shot lead-page.png
+wav lead-as-preset.wav
+key 11 down
+wait 500
+key 14 down
+wait 400
+key 11 up
+wait 400
+key 18 down
+wait 300
+key 14 up
+wait 1200
+pressure 18 100
+wait 800
+pressure 18 0
+wait 400
+key 18 up
+wait 1500
+wavstop
+turn K2 33
+shot lead-glide.png
+wav lead-glide.wav
+key 11 down
+wait 500
+key 14 down
+wait 400
+key 11 up
+wait 400
+key 18 down
+wait 300
+key 14 up
+wait 1200
+pressure 18 100
+wait 800
+pressure 18 0
+wait 400
+key 18 up
+wait 1500
+wavstop
+turn K2 -33
+turn K3 10
+turn K4 -10
+wav lead-vibrato.wav
+key 11 down
+wait 500
+key 14 down
+wait 400
+key 11 up
+wait 400
+key 18 down
+wait 300
+key 14 up
+wait 1200
+pressure 18 100
+wait 800
+pressure 18 0
+wait 400
+key 18 up
+wait 1500
+wavstop
+turn K3 -10
+turn K4 10
+turn K1 3
+shot lead-reed.png
+wav lead-reed.wav
+key 11 down
+wait 500
+key 14 down
+wait 400
+key 11 up
+wait 400
+key 18 down
+wait 300
+key 14 up
+wait 1200
+pressure 18 100
+wait 800
+pressure 18 0
+wait 400
+key 18 up
+wait 1500
+wavstop

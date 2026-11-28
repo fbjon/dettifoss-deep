@@ -463,6 +463,17 @@ static int expect(const char *what, const char *val)
         got = lv.abpm;
     else if (!strcmp(what, "kpage"))
         got = lv.page;
+    else if (!strcmp(what, "lead_sound"))          /* the Lead page: Sound (0 the Preset's), the kind sent, Glide
+                                                    * (ms), Vibrato, Press (%) */
+        got = lv.lsnd;
+    else if (!strcmp(what, "lead_kind"))
+        got = lv.lsnd ? lv.lsnd - 1 : lv.lpk;
+    else if (!strcmp(what, "lead_glide"))
+        got = lv.lglide * 10;
+    else if (!strcmp(what, "lead_vib"))
+        got = lv.lvib;
+    else if (!strcmp(what, "lead_press"))
+        got = lv.lpr;
     else if (!strcmp(what, "top"))                 /* the chord's top note, MIDI; its notes (0 the bass) */
         got = lv.top;
     else if (!strncmp(what, "note", 4) && what[4] >= '0' && what[4] <= '3')

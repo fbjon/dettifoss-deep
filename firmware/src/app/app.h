@@ -83,12 +83,14 @@ typedef struct {
         uint8_t snap;                    /* Snap, 0..100 */
         uint8_t mode;                    /* the chords' Keys: 0 P, 1 Q, 2 R */
         uint8_t hold;                    /* the progression's Way: 0 REST, 1 HOLD */
-        int8_t height, spread;           /* Q and R's window: its middle (MIDI), its spread (semitones) */
+        int8_t height, spread;           /* CHORDS' Height (the top note, MIDI), Spread (semitones) */
         int8_t oct, loct;                /* the chords' octave, the lead's (-1 .. 1) */
         uint8_t abpm, adiv, apat, alen;  /* the arp's Tempo, Division, Pattern, Length */
+        uint8_t lsnd;                    /* the lead's Sound: 0 the Preset's, 1 Swell, 2 Glass, 3 Reed */
+        uint8_t lglide, lvib, lpress;    /* ... its Glide (10 ms), Vibrato and Press (%) */
     } pl;
 } project_t;
-#define PLAYER_SET 1u
+#define PLAYER_SET 2u                    /* (1: saved before the lead's, which start as the defaults) */
 _Static_assert(sizeof(project_t) <= PLAT_STORE_MAX, "the project must fit one flash object");
 
 typedef struct {                         /* banks B and C, and the Presets saved over (before 2026-10-19): an object each */
