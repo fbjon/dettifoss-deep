@@ -261,7 +261,7 @@ static void player_defaults(void)              /* the Live pages' settings as at
     memset(&proj.pl, 0, sizeof proj.pl);
     proj.pl.set = PLAYER_SET;
     proj.pl.snap = 50;
-    proj.pl.height = 60;                       /* C4 */
+    proj.pl.height = 72;                       /* the top note, C5 */
     proj.pl.spread = 12;
     proj.pl.abpm = 90;
     proj.pl.adiv = 1;                          /* eighths */
