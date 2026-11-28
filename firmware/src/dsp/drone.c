@@ -657,7 +657,7 @@ void dr_param_text(int i, int v, char *b)
 }
 
 /* -------------------------------------------------------------- commands --- */
-enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO, C_LEAD, C_PAD, C_ARP };
+enum { C_SET, C_PLAY, C_VOICE, C_PANIC, C_SLIDE, C_LFO_RESET, C_PSLIDE, C_SEED, C_DUCK, C_GEST, C_CHORD, C_CHORD_GO, C_LEAD, C_PAD, C_ARP, C_MIX };
 /* a load (boot, project_apply) posts every value at once, before the render drains any: the queue holds
  * them all (at 64 the last values of a saved sound were dropped at start-up, the macros among them) */
 #define QN 128u
@@ -699,6 +699,11 @@ void dr_chord_rest(int snap, int bass)       /* (go's: 2 a rest, 3 one keeping t
 void dr_lead(int note_c, int gate) { post(C_LEAD, gate ? 1 : 0, note_c); }
 void dr_lead_kind(int kind) { post(C_LEAD, 2, kind < 0 || kind >= DR_LEAD_KINDS ? 0 : kind); }
 void dr_lead_press(int p) { post(C_LEAD, 3, p < 0 ? 0 : p > 127 ? 127 : p); }
+void dr_mix(int what, int db)
+{
+    if (what >= 0 && what < 4)
+        post(C_MIX, what, db < -31 ? -31 : db > 6 ? 6 : db);
+}
 void dr_lead_set(int what, int v)
 {
     if (what >= 0 && what < 3)
@@ -814,7 +819,6 @@ typedef struct {
     /* the chord layer (dr_chord): while con, the main oscillator plays cp, not the Pitch; while cia, the partner's
      * interval is civ, gliding to civt (or, con off, back to its own) by civr a tick; its gain to cpon by cpgs */
     uint8_t con, cia, cpon;
-    float ly;                                     /* Thickness's octave doubling, as far as it's in (0..1, gliding) */
     float cp, civ, civt, civr, cpgs;
     uint8_t rt[2], rp[2];                         /* the LFO routes (osc, filter): the tap now, the one before */
     float rw[2];                                  /* ... from the one before to now, 0..1 */
@@ -844,20 +848,15 @@ static int chord_on[DR_NGROUPS];
 static int16_t chs_main[DR_NGROUPS], chs_iv[DR_NGROUPS];
 static uint8_t chs_pon[DR_NGROUPS], ch_on, ch_bp;   /* ch_bp: each drone's bridge voices still to take the old notes */
 static float ch_ms, ch_pa = 1.0f, ch_pa0 = 1.0f, ch_pat = 0.15f, ch_prev = 1.0f, ch_brel = 0.5f, ch_pr, ch_k;
-#define XV_N 12                                  /* the bridge voices: two changes' old notes at once, with Thickness's
-                                                  * octave (a third takes the quietest) */
+#define XV_N 8                                   /* the bridge voices: two changes' old notes at once (a third takes the
+                                                  * quietest) */
 typedef struct {
     float ph, note, amp, e, de;                  /* phase; MIDI note; level as it was; release left (1 .. 0), a tick's */
-    uint8_t g, on, tri;                          /* which drone's filter it sounds through; a triangle (the octave) */
+    uint8_t g, on;                               /* which drone's filter it sounds through */
 } xv_t;
 static xv_t xv[XV_N];
 static uint8_t xv_n[DR_NGROUPS];                 /* how many sound through each drone */
 static float xbr[CR];                            /* their sound, a tick of it (bridge_tick) */
-/* THICKNESS's octave: under a chord, its upper tones (drone I's partner, the fifth; drone II and its partner, the third
- * and the top) doubled an octave up, as triangles (softer than the drones' saws), each at LY_LVL of its own level
- * times how far it's in (v->ly). ly_note / ly_amp: each drone's main and partner, this tick (from render_group) */
-#define LY_LVL 0.5f
-static float ly_note[DR_NGROUPS][2], ly_amp[DR_NGROUPS][2], ly_ph[DR_NGROUPS][2];
 static const uint8_t CHORD_V[5][4] = {{1, 1, 2, 1}, {1, 1, 2, 2}, {0, 1, 1, 2}, {2, 1, 1, 2}, {3, 1, 1, 2}};
 static int chord_vi;
 /* A scale's note on the Tuning (Evan, 2026-10-30): its interval over drone I, semitones; cur as on 12-tone, j its pure
@@ -1055,6 +1054,10 @@ typedef struct {
 } ld_t;
 static ld_t ld __attribute__((aligned(32)));   /* the pad path's (dr_pad_run): written by the core that renders it,
                                                 * by this one only while no block is handed over (drain) */
+/* THE MIX (the Mix page, dr_mix): each layer's level over its own, gliding there over ~50 ms a block at a time (the
+ * drones' within the block too); 1 exactly when untouched, so nothing changes until it's turned */
+enum { MX_DRONES, MX_PAD, MX_LEAD, MX_ARP, MX_N };
+static float mx_t[MX_N] = {1.0f, 1.0f, 1.0f, 1.0f}, mx[MX_N] = {1.0f, 1.0f, 1.0f, 1.0f};
 static float ld_glk = 1.0f / 0.07f, ld_vibk = 1.0f, ld_presk = 1.0f;   /* the player's (the Lead page, dr_lead_set):
                                                 * 1 / the glide (s), the vibrato's and the pressure's share */
 /* THE ARP: the chord's tones in the octave over the bass, one at a time in a pattern, each a plucked note (a quick
@@ -1216,10 +1219,9 @@ void dr_init(void)
  * offset breathing slowly (PULSE_HZ) while it's in; WOW a drone's pitch wavering slowly, d cents; TICKD / TICKU the
  * sub's own rate (p a drone); CHORD a
  * partner's own interval (p a drone, d 1 or 2), from Wander's scale (v0.3); DOWN as TO, down toward d (the Swell's
- * Shape toward its gate); PFADE a drone's partner (p) faded out, GFADE the whole drone (Thickness); LAYER the chord's
- * upper tones doubled an octave up (Thickness, under a chord). */
+ * Shape toward its gate); PFADE a drone's partner (p) faded out, GFADE the whole drone (Thickness). */
 enum { MK_ADD, MK_SW, MK_OFF, MK_ZERO, MK_TO, MK_SHIFT, MK_BUMP, MK_PULSE, MK_WOW, MK_TICKD, MK_TICKU, MK_CHORD, MK_DOWN,
-       MK_PFADE, MK_GFADE, MK_LAYER };
+       MK_PFADE, MK_GFADE };
 typedef struct {
     uint8_t p, kind;                             /* the value (or, for a pitch move, the drone) and the kind */
     int16_t d;                                   /* the amount at full (MK_ADD; MK_TO: the value aimed at) */
@@ -1334,9 +1336,8 @@ static const move_t LIVE_MV[4][2][LIVE_N] = {
       {DR_GP(0, GP_RESO), MK_ADD, 40, 40, 100, 0, 0}, {DR_GP(1, GP_RESO), MK_ADD, 40, 40, 100, 0, 0},
       {P_REV_DAMP, MK_ZERO, 0, 0, 60, 0, 0}}},
     /* THICKNESS: thinner, the beating goes and the voices leave one by one, the top first: drone II's partner, drone II,
-     * drone I's partner, to the bass alone; thicker, the partners on and beating, the drones wider apart, under a
-     * chord its upper tones doubled an octave up (a softer wave), then a little drive and noise (Frej, 2026-11-26:
-     * richness is the chord doubled an octave up) */
+     * drone I's partner, to the bass alone; thicker, the partners on and beating, the drones wider apart, then a
+     * little drive and noise. Under a chord the pad path doubles it, its octave and its bass (pad_chord) */
     {{{DR_GP(0, GP_DETUNE), MK_ZERO, 0, 0, 40, 0, 0}, {DR_GP(1, GP_DETUNE), MK_ZERO, 0, 0, 40, 0, 0},
       {1, MK_PFADE, 1, 0, 35, 0, 0}, {1, MK_GFADE, 1, 35, 70, 0, 0}, {0, MK_PFADE, 1, 70, 100, 0, 0},
       {DR_GP(0, GP_MIX), MK_ZERO, 0, 50, 100, 0, 0}, {DR_GP(1, GP_MIX), MK_ZERO, 0, 50, 100, 0, 0}},
@@ -1345,7 +1346,7 @@ static const move_t LIVE_MV[4][2][LIVE_N] = {
       {P_WIDTH, MK_TO, 90, 0, 60, 0, 0},
       {DR_GP(0, GP_DRIVE), MK_ADD, 20, 60, 100, 0, 0},
       {DR_GP(1, GP_DRIVE), MK_ADD, 20, 60, 100, 0, 0}, {DR_GP(0, GP_NOISE), MK_ADD, 8, 50, 100, 0, 0},
-      {DR_GP(1, GP_NOISE), MK_ADD, 8, 50, 100, 0, 0}, {0, MK_LAYER, 1, 10, 60, 0, 0}}},
+      {DR_GP(1, GP_NOISE), MK_ADD, 8, 50, 100, 0, 0}}},
     /* MOTION: stiller, the LFOs and Drift ease to nothing, then the Swell and the delay's wobble; more, Movement and
      * Drift up, then the filters breathe slowly against each other, 1.5 octaves (a sound with no LFO routed moves
      * too) */
@@ -1361,7 +1362,6 @@ static const move_t LIVE_MV[4][2][LIVE_N] = {
 };
 static float th_pm[DR_NGROUPS] = {1.0f, 1.0f}, th_gm[DR_NGROUPS] = {1.0f, 1.0f};   /* Thickness: each drone's partner
                                                   * and the whole drone, as far as they're left in, 0..1 */
-static float th_ly;                              /* ... and its octave doubling, 0..1 */
 static int live_on(void) { return base[P_DARK] | base[P_THICK] | base[P_MOTION] | base[P_SPACE]; }
 static float mv_lvl[DR_NGEST][MV_N];             /* each key's moves' levels now, 0..1 (gliding) */
 static float mac_last[DR_NGEST];                 /* each key's amount last time ... */
@@ -1391,7 +1391,6 @@ static void macro_reset(void)
     mac_out = 0;
     mv_moving = 0;
     th_pm[0] = th_pm[1] = th_gm[0] = th_gm[1] = 1.0f;
-    th_ly = 0.0f;
     mac_ph = age_l = age_ph = 0.0f;
     age_mk = dk_mk = 1.0f;
     wand_st = wand_to = 0.0f;
@@ -1539,7 +1538,6 @@ static void mv_add(const move_t *v, float l, float *off, uint8_t *on, float *pm,
     }
     case MK_PFADE: th_pm[v->p] = fm_minf(th_pm[v->p], 1.0f - l); break;
     case MK_GFADE: th_gm[v->p] = fm_minf(th_gm[v->p], 1.0f - l); break;
-    case MK_LAYER: th_ly = fm_maxf(th_ly, l); break;
     case MK_TICKD: tick_d[v->p] = fm_maxf(tick_d[v->p], l); break;
     case MK_TICKU: tick_u[v->p] = fm_maxf(tick_u[v->p], l); break;
     case MK_ZERO: off[v->p] -= (float)base[v->p] * l * (v->d ? (float)v->d * 0.01f : 1.0f); break;
@@ -1587,7 +1585,6 @@ static void macro_apply(uint32_t n)              /* the offsets again, n samples
     mv_moving = 0;
     tick_d[0] = tick_d[1] = tick_u[0] = tick_u[1] = 0.0f;
     th_pm[0] = th_pm[1] = th_gm[0] = th_gm[1] = 1.0f;
-    th_ly = 0.0f;
     chord_on[0] = chord_on[1] = 0;
     for (m = 0; m < DR_NGEST; m++) {
         const move_t *row = MACRO_MV[m];
@@ -1754,29 +1751,39 @@ static float snap_rel(int s) { return s < DR_SNAP_LEGATO ? 1.5f : s < DR_SNAP_PA
  * the voices while the old ones release, so changes overlap. Thickness at 0 or under: no pad */
 /* THE PAD'S KINDS (fixed for now, one a Preset: dr_pad_kind): a few sections, each a wave over some of the chord's
  * tones (bit 0 the bass, 1-3 the tones over it), an octave, copies spread in pitch (cents d0 at Thickness 0 to
- * d0 + dd at 100, as semitones) and across the sides, and a level; then the pad filter's cutoff and 1 / Q */
+ * d0 + dd at 100, as semitones) and across the sides (w of the pad's spread), a level, and where on Thickness it
+ * fades in (t0 to t1; both 0: from the start); then the pad filter's cutoff and 1 / Q. Thickness works the same on
+ * every kind (Frej, 2026-11-28): the chord doubled from the start; the upper tones an octave up as triangle pairs,
+ * in from 10 to 60; over the top half a detuned pair on the bass, nearly centred, and a sine an octave under it
+ * (Frej, 2026-11-27: the bass gained the least from Thickness). One copy: d0 is its detune (the sub 5 cents flat, so
+ * against a drone's own sine sub it swells slowly instead of cancelling as the phases fall) */
+#define PAD_SUB_LO 2800.0f                       /* a sub no lower than E1 (41 Hz): under it, left out */
 #define PADC_HALF (DR_PAD_N / 2)                 /* a chord's voices: one half; a change comes in on the other */
 typedef struct {
     uint8_t wave, tones, copies;
     int8_t oct;
-    float d0, dd, lvl;
+    float d0, dd, lvl, w, t0, t1;
 } padsec_t;
 typedef struct {
-    padsec_t sec[4];
+    padsec_t sec[5];
     uint8_t n;
     float fc, k, ch;                             /* ch: the chorus's mix, 0 none */
 } padkind_t;
+#define PAD_OCT_L 0.25f                          /* the octave's level (it was the drones' own, on the main core) */
+#define PAD_OCT(l) {DR_TRI, 14, 2, 1, 0.03f, 0.02f, l, 1.0f, 0.1f, 0.6f}
+#define PAD_SUB {DR_SINE, 1, 1, -1, -0.05f, 0.0f, 0.9f, 0.0f, 0.5f, 1.0f}
+#define PAD_BASS2(w, l) {w, 1, 2, 0, 0.04f, 0.06f, l, 0.25f, 0.5f, 1.0f}
 static const padkind_t PAD_KIND[DR_PAD_KINDS] = {
     /* 0: saws: the bass one, each other tone a pair */
-    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.7f}, {DR_SAW, 14, 2, 0, 0.04f, 0.08f, 1.0f}}, 2, 96.0f, 1.4f, 0.0f},
-    /* 1: WIDE SAWS (the synthesis recipes'): four saws a tone, an octave of triangles over the tones, a sine under
-     * the bass */
-    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.5f}, {DR_SAW, 14, 4, 0, 0.06f, 0.05f, 0.45f},
-      {DR_TRI, 14, 2, 1, 0.03f, 0.02f, 0.3f}, {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.6f}}, 4, 90.0f, 1.6f, 0.5f},
-    /* 2: FELT (the recipes' felt and air, its body): warm triangles, a pair a tone, a sine under the bass, the filter
-     * low */
-    {{{DR_TRI, 1, 1, 0, 0.0f, 0.0f, 0.56f}, {DR_TRI, 14, 2, 0, 0.04f, 0.03f, 0.77f},
-      {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.56f}}, 3, 81.0f, 1.8f, 0.35f},
+    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.7f, 0.0f, 0.0f, 0.0f}, {DR_SAW, 14, 2, 0, 0.04f, 0.08f, 1.0f, 1.0f, 0.0f, 0.0f},
+      PAD_OCT(PAD_OCT_L), PAD_BASS2(DR_SAW, 0.6f), PAD_SUB}, 5, 96.0f, 1.4f, 0.0f},
+    /* 1: WIDE SAWS (the synthesis recipes'): four saws a tone; the octave a little louder (it had two: its own and the
+     * drones') */
+    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 0.0f}, {DR_SAW, 14, 4, 0, 0.06f, 0.05f, 0.45f, 1.0f, 0.0f, 0.0f},
+      PAD_OCT(0.35f), PAD_BASS2(DR_SAW, 0.5f), PAD_SUB}, 5, 90.0f, 1.6f, 0.5f},
+    /* 2: FELT (the recipes' felt and air, its body): warm triangles, a pair a tone, the filter low */
+    {{{DR_TRI, 1, 1, 0, 0.0f, 0.0f, 0.56f, 0.0f, 0.0f, 0.0f}, {DR_TRI, 14, 2, 0, 0.04f, 0.03f, 0.77f, 1.0f, 0.0f, 0.0f},
+      PAD_OCT(PAD_OCT_L), PAD_BASS2(DR_TRI, 0.6f), PAD_SUB}, 5, 81.0f, 1.8f, 0.35f},
 };
 static uint8_t padc_nv;                          /* how many voices the sounding half has */
 static void pad_voice_set(int i, int wave, float note, float pan, float lvl, float glide)   /* (from drain) glide: s */
@@ -1816,14 +1823,17 @@ static void pad_chord_set(float glide)          /* the sounding half's notes, sp
     on[3] = chs_pon[1];
     for (k = 0; k < pk->n; k++) {
         const padsec_t *q = &pk->sec[k];
-        const float det = q->d0 + q->dd * t, l = q->lvl == 1.0f ? lvl : lvl * q->lvl;
+        const float det = q->d0 + q->dd * t;
+        const float f = q->t1 > q->t0 ? fm_clampf((t - q->t0) / (q->t1 - q->t0), 0.0f, 1.0f) : 1.0f;
+        const float l = (q->lvl == 1.0f ? lvl : lvl * q->lvl) * f;
         for (i = 0; i < 4; i++) {
             if (!(q->tones >> i & 1u))
                 continue;
+            const float nt = tone[i] + (float)(12 * q->oct);
+            const int heard = on[i] && (q->oct >= 0 || nt * 100.0f >= PAD_SUB_LO);
             for (c = 0; c < q->copies && n < PADC_HALF; c++, n++) {
                 const float o = q->copies > 1 ? (float)(2 * c) / (float)(q->copies - 1) - 1.0f : 0.0f;
-                pad_voice_set(v0 + n, q->wave, tone[i] + (float)(12 * q->oct) + o * det, o * sp, on[i] ? l : 0.0f,
-                              glide);
+                pad_voice_set(v0 + n, q->wave, nt + (q->copies > 1 ? o * det : det), o * sp * q->w, heard ? l : 0.0f, glide);
             }
         }
     }
@@ -1942,7 +1952,7 @@ static void chord_run(uint32_t n)                /* the attack, the release and 
 }
 DR_FAR_FN(void, chord_run, (uint32_t))          /* (in the flash: a block's, and the RAM is full) */
 /* a bridge voice for an old note of drone g, at level amp (released over rel seconds): a free one, or the quietest */
-static void xv_take(int g, float note, float amp, float rel, int tri)
+static void xv_take(int g, float note, float amp, float rel)
 {
     int i, q = 0;
     for (i = 0; i < XV_N; i++) {
@@ -1958,7 +1968,6 @@ static void xv_take(int g, float note, float amp, float rel, int tri)
     xv[q].on = amp > 0.0f;
     xv_n[g] += xv[q].on;
     xv[q].g = (uint8_t)g;
-    xv[q].tri = (uint8_t)tri;
     xv[q].note = note;
     xv[q].amp = amp;
     xv[q].e = 1.0f;
@@ -2123,6 +2132,9 @@ static void drain(void)
                 if (padc_on)
                     pad_chord_set(0.0f);
             }
+            break;
+        case C_MIX:                            /* a layer's level: 0 dB its own; -31 off */
+            mx_t[a] = b == 0 ? 1.0f : b <= -31 ? 0.0f : fm_exp2f((float)b * (1.0f / 6.0206f));
             break;
         case C_ARP:
             if (a == 255)
@@ -2527,7 +2539,6 @@ static void morph_snap(int g)                    /* all of a drone's switches wh
     v->pg = (v->con ? v->cpon : p[GP_PARTNER] != 0) ? 1.0f : 0.0f;
     v->pm = th_pm[g];
     v->lm = th_gm[g];
-    v->ly = ch_on ? th_ly : 0.0f;
     v->pe = v->pg * v->pm;
     v->ovon = 0;
     v->cia = v->con;                             /* (a chord's interval where it's going) */
@@ -2564,7 +2575,6 @@ static void morph_tick(int g, float step)        /* one control tick of the swit
                    : toward(v->pg, p[GP_PARTNER] ? 1.0f : 0.0f, step);
     v->pm = toward(v->pm, th_pm[g], TH_STEP);
     v->lm = toward(v->lm, th_gm[g], TH_STEP);
-    v->ly = toward(v->ly, ch_on ? th_ly : 0.0f, TH_STEP * 0.25f);   /* (over a quarter second) */
     v->pe = v->pg * v->pm;
     v->nc = pfs[DR_GP(g, GP_NCOLOR)] * 0.01f;    /* the colour, a blend white .. pink, gliding as a knob does */
     if (v->ovon != chord_on[g] || (chord_on[g] && fm_fabsf(v->ov - chord_t[g]) > 1e-3f)) {
@@ -2642,36 +2652,18 @@ static void bridge_take(int g, float omix, float ival, float detune)   /* a pad'
     ch_bp &= (uint8_t)~(1u << g);
     if (v->gf > 0.0f) {
         if (g || !cr.bk)                         /* (a bass that carries on needs none) */
-            xv_take(g, v->ps2, g ? og0 : ob * cr.bp, g ? ch_brel : 0.04f, 0);
+            xv_take(g, v->ps2, g ? og0 : ob * cr.bp, g ? ch_brel : 0.04f);
         if (v->pe > 0.0f)
-            xv_take(g, v->ps2 + iv0, og0 * v->pe * v->ig, ch_brel, 0);
-        if (v->ly > 0.0f) {                      /* Thickness's octave too */
-            if (g)
-                xv_take(g, v->ps2 + 12.0f, og0 * v->ly * LY_LVL, ch_brel, 1);
-            if (v->pe > 0.0f)
-                xv_take(g, v->ps2 + iv0 + 12.0f, og0 * v->pe * v->ig * v->ly * LY_LVL, ch_brel, 1);
-        }
+            xv_take(g, v->ps2 + iv0, og0 * v->pe * v->ig, ch_brel);
     }
 }
 DR_FAR_FN(void, bridge_take, (int, float, float, float))
 static void bridge_tick(int g, int wi, float wf, float pw, float shift, uint32_t m)
 {
-    const float ly = grp[g].ly * LY_LVL;
     uint32_t j;
     int i;
     for (j = 0; j < m; j++)
         xbr[j] = 0.0f;
-    for (i = g ? 0 : 1; ly > 0.0f && i < 2; i++) {   /* Thickness's octave (not the bass's) */
-        const float inc = note_inc(ly_note[g][i] + 12.0f + shift), a = ly_amp[g][i] * ly;
-        float ph = ly_ph[g][i];
-        if (a <= 0.0f)
-            continue;
-        for (j = 0; j < m; j++) {
-            xbr[j] += a * xosc(DR_TRI, 0.0f, ph, inc, pw);
-            ph = advance(ph, inc);
-        }
-        ly_ph[g][i] = ph;
-    }
     for (i = 0; i < XV_N; i++) {
         xv_t *b = &xv[i];
         float inc, a, da, ph;
@@ -2683,7 +2675,7 @@ static void bridge_tick(int g, int wi, float wf, float pw, float shift, uint32_t
         da = (b->amp * b->e * b->e - a) * (1.0f / (float)CR);
         ph = b->ph;
         for (j = 0; j < m; j++) {
-            xbr[j] += a * (b->tri ? xosc(DR_TRI, 0.0f, ph, inc, pw) : xosc(wi, wf, ph, inc, pw));
+            xbr[j] += a * xosc(wi, wf, ph, inc, pw);
             ph = advance(ph, inc);
             a += da;
         }
@@ -2959,13 +2951,7 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
                         chr * (CHR_JIT * v->jit + mm));
         cu = cr.q0 + (cr.q - cr.q0) * ((float)j0 * inv_n);   /* the attack, and a rest's release (cr.q) */
         mg = g ? cu : cr.b0 + (cr.b - cr.b0) * ((float)j0 * inv_n);   /* the bass's (chord_run) */
-        if (v->ly > 0.0f) {                      /* Thickness's octave follows each note as it sounds */
-            ly_note[g][0] = v->ps2;
-            ly_note[g][1] = v->ps2 + ival + detune;
-            ly_amp[g][0] = og * mg;
-            ly_amp[g][1] = og * v->pe * v->ig * cu;
-        }
-        if (xv_n[g] || v->ly > 0.0f) {           /* (in the flash: the RAM has no room, and it's rarely on) */
+        if (xv_n[g]) {                           /* (in the flash: the RAM has no room, and it's rarely on) */
             DR_FAR(bridge_tick)(g, wi, wf, pw, tune + pmod + mac_p[g], je - j0);
             xb = 1;
         }
@@ -3444,6 +3430,7 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into p
         const uint32_t je = j0 + CR < n ? j0 + CR : n;
         const float dt = (float)(je - j0) * (1.0f / DR_SR);
         float a = ld.amp, da, vib, fc, g, a1, a2, a3, pr, inc[LD_N];
+        const float lg = LD_LVL * K->lvl * mx[MX_LEAD];
         const float k = K->k;
         ld.pitch += (ld.note - ld.pitch) * fm_minf(dt * ld_glk, 1.0f);
         ld.vib = ld.gate ? fm_minf(ld.vib + dt * (1.0f / K->vin), 1.0f) : ld.vib;
@@ -3476,8 +3463,8 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into p
                 r = i ? r + K->gr[i] * v2 : K->gr[i] * v2;
             }
             a += da;
-            padl[j] += a * (LD_LVL * K->lvl) * l;
-            padr[j] += a * (LD_LVL * K->lvl) * r;
+            padl[j] += a * lg * l;
+            padr[j] += a * lg * r;
         }
         for (i = 0; i < no; i++) {
             ld.ic1[i] = fm_flush(ld.ic1[i]);
@@ -3625,8 +3612,8 @@ static __attribute__((noinline)) void pv_run(uint32_t n)
             }
             inc = note_inc(v->note);
             ph = v->ph;
-            gl = v->gl * PV_GAIN;
-            gr = v->gr * PV_GAIN;
+            gl = v->gl * (PV_GAIN * mx[MX_PAD]);
+            gr = v->gr * (PV_GAIN * mx[MX_PAD]);
             for (j = j0; j < je; j++) {
                 const float x = osc(v->wave, ph, inc, 0.5f);
                 a += da;
@@ -3718,7 +3705,7 @@ static void arp_follow(void)                     /* the arp's tones and its beat
     {                                            /* Length 0 .. 100: a decay of a twentieth of a step .. 2.5 steps */
         const float l = (float)ar.len * 0.01f, steps = 0.05f + 2.5f * l * l;
         ar.dec = 1.0f / (steps / (ar.inc * DR_SR) + 0.02f);
-        ar.g = AR_LVL * AR_G[pad_kind] / fm_sqrtf(1.0f + steps);  /* (as long tails pile up: about the same loudness) */
+        ar.g = AR_LVL * AR_G[pad_kind] / fm_sqrtf(1.0f + steps) * mx[MX_ARP];  /* (as long tails pile up: about the same loudness) */
     }
 }
 
@@ -3744,7 +3731,12 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
     while (n) {
         uint32_t k = n > BLK ? BLK : n, j;
         int g, pad = 0;                          /* the pad path: off, handed over (1), here (0 .. as hand()) */
-        float frate = fade_rate();
+        float frate = fade_rate(), md = mx[MX_DRONES], mds;
+        for (g = 0; g < MX_N; g++) {             /* the mix toward where it's set, before the pad path's hand-over */
+            const float d = mx_t[g] - mx[g];
+            mx[g] = d > -2e-4f && d < 2e-4f ? mx_t[g] : mx[g] + d * fm_minf((float)k * (1.0f / (0.05f * DR_SR)), 1.0f);
+        }
+        mds = (mx[MX_DRONES] - md) * (1.0f / (float)k);
         if (ld.gate || ld.amp > 0.0f || pv.live || (ar.on && ch_on) || ar.live) {
             pad_k = k;
             pad_follow();
@@ -3794,6 +3786,12 @@ void dr_render(int32_t *out, uint32_t n, uint32_t gain_q12)
             mixl[j] *= a;
             mixr[j] *= a;
         }
+        if (mds != 0.0f || md != 1.0f)           /* the Mix page's Drones (untouched: nothing to do) */
+            for (j = 0; j < k; j++) {
+                md += mds;
+                mixl[j] *= md;
+                mixr[j] *= md;
+            }
         if (pad == 2 && pad_wait() != 0)
             pad = 0;                             /* dropped: silent this block */
         else if (pad == 1)

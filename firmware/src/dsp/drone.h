@@ -293,6 +293,8 @@ void dr_lead(int note_c, int gate);           /* the lead: a note (MIDI x 100), 
 #define DR_LEAD_KINDS 3
 void dr_lead_kind(int kind);                  /* the lead's sound: 0 Swell, 1 Glass, 2 Reed (a Preset's, as the pad's) */
 void dr_lead_press(int p);                    /* the held key's pressure, 0 .. 127: brighter, more vibrato */
+void dr_mix(int what, int db);                /* the mix: 0 the drones, 1 the pad, 2 the lead, 3 the arp, each
+                                               * -31 (off) .. +6 dB over its own level (0) */
 void dr_lead_set(int what, int v);            /* the lead's playing: 0 Glide (ms, 0 .. 1000), 1 Vibrato and 2 Press
                                                * (% of the kind's, 0 .. 200) */
 /* the arp: the chord's tones one at a time while a chord sounds (in the pad path) */
