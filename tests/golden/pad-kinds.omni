@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the pad's three kinds on the starting sound, the progression's
+# steps at Snap 80 and Thickness 60: saws (the first kind), Wide saws (Preset 2's), Felt (Preset 8's). Not a test of
+# its own.
+notips
+tap PLAY
+wait 1500
+tap HOME
+turn ALGO 80
+set 87 60
+wait 600
+padkind 0
+wav pad-saws.wav
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+wavstop
+padkind 1
+wav pad-wide-saws.wav
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+wavstop
+padkind 2
+wav pad-felt.wav
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+shot pad-kinds.png
+wavstop

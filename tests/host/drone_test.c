@@ -2125,6 +2125,43 @@ int main(void)
     }
 
     check("output finite throughout", finite_ok);
+    {   /* the pad path's voices (dr_pad_voice): a note where it's set, panned, through the stereo low-pass, released to
+         * silence; it plays with the drones stopped (as the lead) */
+        static float l[22050], r[22050];
+        float el = 0.0f, er = 0.0f, e_open, e_shut;
+        int k, up = 0;
+        dry_init();
+        dr_pad_filter(13500, 0);
+        dr_pad_env(10, 200);
+        dr_pad_voice(0, 5700, -100, 100);         /* A3, all the way left */
+        run(secs(0.3f));
+        capture(l, 22050, 0);
+        for (k = 1; k < 22050; k++)
+            up += l[k - 1] < 0.0f && l[k] >= 0.0f;
+        check("pad voice: A3 plays at 220 Hz", abs(up * 2 - 220) <= 3);
+        dr_pad_voice(0, 5700, -100, 100);
+        capture(r, 22050, 1);
+        for (k = 0; k < 22050; k++) {
+            el += l[k] * l[k];
+            er += r[k] * r[k];
+        }
+        check("pad voice: panned left, the right silent", el > 1e-3f && er < el * 1e-6f);
+        dr_pad_voice(0, 5700, 0, 100);
+        capture(l, 22050, 0);
+        for (k = 0, e_open = 0.0f; k < 22050; k++)
+            e_open += l[k] * l[k];
+        dr_pad_filter(4500, 0);                     /* the cutoff at A2, under the note */
+        run(secs(0.2f));
+        capture(l, 22050, 0);
+        for (k = 0, e_shut = 0.0f; k < 22050; k++)
+            e_shut += l[k] * l[k];
+        check("pad filter: a cutoff an octave under it, 10 dB down", e_shut < e_open * 0.1f);
+        dr_pad_voice(0, 5700, 0, 0);
+        run(secs(3.0f));                            /* (200 ms a time constant: under -100 dB by 2.6 s) */
+        run(secs(0.5f));
+        check("pad voice: released, silent", nonzero == 0 && finite_ok);
+    }
+
     printf(bad ? "drone: %d FAILED\n" : "drone: all ok\n", bad);
     return bad ? 1 : 0;
 }

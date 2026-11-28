@@ -11,6 +11,10 @@
  *   SEL + the lit root   the chord let go: the drones back to the sound's own pitches
  *   OCT- / OCT+    the chords an octave down / up (-1 .. +1)
  *   KNOB 1-4       Dark-Bright, Thickness, Motion, Space (the live macros, a sound's)
+ *   PRESETS        the sound: P1 DETTIFOSS, P2 WIDE, P3 FELT, each with its pad, gliding there; the knobs stay
+ *   ARP            a tap: the arp on / off (lit while on): the chord's tones in the octave over the bass, one at
+ *                  a time, while a chord sounds. Held, the knobs: Tempo (a MIDI clock wins), Division, Pattern,
+ *                  Length
  *   ALGORITHM      Snap: how a change lands: a wash (a slow glide) .. legato (a short one) .. a pad's attack
  *
  * A chord is a bass and three tones over it: drone I's main note the bass, its partner the fifth, drone II's main
@@ -18,8 +22,8 @@
  * extension away first, then the third, then the fifth. Dark-Bright past +-50 moves the upper two tones an octave
  * (back inside +-40).
  *
- * THE PROGRESSION (HOME on the Live page; HOME again: the chords): a progression's chords stepped through, the keys
- * above free for a lead (not yet):
+ * THE PROGRESSION (HOME on the Live page; HOME again: the chords): a progression's chords stepped through, a lead
+ * on the keys above:
  *
  *   F3 / F#3       the next / the previous chord, both always lit, taking turns at full each 0.5 s. Two ways
  *                  (SEL + F3): REST: a tap steps; held, the chord is released, and letting go brings in the next
@@ -28,7 +32,10 @@
  *                  While a chord rests the drones move to the next one's notes, so it comes in on them
  *   G5             BASS: the bass sounding held under the chords that follow, through rests too (lit), till tapped
  *                  again
- *   OCT, the knobs, ALGORITHM   as on the Live page
+ *   G3 .. F#5      the lead: one note at a time, the last key pressed; held notes glide; pressed harder,
+ *                  brighter, with more vibrato. Its sound is the Preset's: Swell, Glass, Reed
+ *   OCT- / OCT+    the lead an octave down / up (-1 .. +1); the chords keep the Live page's octave
+ *   the knobs, ALGORITHM, PRESETS   as on the Live page
  *
  * SEL + HOME, on either, opens Niagara Drift's Drones and Pitch pages (again: the other), till the sound has its own.
  *
@@ -43,6 +50,8 @@ static const char *const LV_PC[12] = {"C", "Db", "D", "Eb", "E", "F", "F#", "G",
 #define LV_LOW 41                              /* F3's root: its bass F2 (MIDI) */
 #define PG_NEXT 0                              /* F3 */
 #define PG_PREV 1                              /* F#3 */
+#define PG_LEAD0 2                             /* G3 .. F#5: the lead (keys 2 .. 25) */
+#define PG_NLEAD 24
 typedef struct { int8_t root; uint8_t mods; } pg_chord_t;
 static const pg_chord_t PG_DEMO[] = {{7, 0}, {4, 1u << LM_MIN}, {0, 1u << LM_MIN | 1u << LM_MAJ7}, {2, 1u << LM_MIN | 1u << LM_7},
                                      {7, 1u << LM_MIN | 1u << LM_7}};
@@ -76,7 +85,15 @@ static struct {
                                                 * held), 2 the root (the bass held) */
     uint8_t croot;                             /* Q and R: the chord's root, a pitch class (C 0), for its name */
     char cname[16];                            /* ... its name */
-} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, ""};
+    int8_t lead[PG_NLEAD];                     /* the progression: the lead's keys held, the last pressed last */
+    uint8_t nlead;
+    int8_t lnote;                              /* ... the note sounding or last sounded, MIDI */
+    int8_t loct;                               /* ... its octave (OCT on the progression), -1 .. 1 */
+    uint8_t preset;                            /* the PRESET encoder's last Preset (0 .. LV_NPRESET - 1) */
+    uint8_t lpress;                            /* the lead's key's pressure, as last sent */
+    uint8_t arp, abpm, adiv, apat, alen;       /* the arp: on; its tempo, division, pattern, length (the engine's too) */
+} lv = {-1, 0, 0, -1, 0, 0, 0, 50, {0, 0, 0, 0}, 0, 0, -1, -1, 0, -1, 0, 0, 60, 12, 0, 0, 0, 0, 0, "", {0}, 0, 0, 0,
+        0, 0, 0, 90, 1, 0, 40};
 
 /* THE THREE WAYS TO PLAY CHORDS (SEL on the Live page goes round them):
  *   P  roots and modifiers, as above
@@ -327,9 +344,36 @@ static void pg_rest(int next)                  /* released, the drones moving to
     dr_chord_rest(lv.snap, lv.pbass >= 0);     /* (a held bass sounds on through it) */
     lv.rest = 1;
 }
+static void pg_lead(uint32_t keys, uint32_t ch)   /* the lead: one note, the last key pressed of those held */
+{
+    int k, i, j;
+    for (k = PG_LEAD0; k < PG_LEAD0 + PG_NLEAD; k++) {
+        if (!(ch >> k & 1u))
+            continue;
+        for (i = j = 0; i < lv.nlead; i++)     /* (out of the list, pressed or let go) */
+            if (lv.lead[i] != k)
+                lv.lead[j++] = lv.lead[i];
+        lv.nlead = (uint8_t)j;
+        if (keys >> k & 1u)
+            lv.lead[lv.nlead++] = (int8_t)k;
+    }
+    if (lv.nlead) {
+        lv.lnote = (int8_t)(53 + lv.lead[lv.nlead - 1] + 12 * lv.loct);
+        dr_lead(lv.lnote * 100, 1);
+    } else if (lv.lnote)
+        dr_lead(lv.lnote * 100, 0);
+}
+static void pg_lead_off(void)                  /* the page left: the lead let go */
+{
+    lv.nlead = 0;
+    if (lv.lnote)
+        dr_lead(lv.lnote * 100, 0);
+}
 static void pg_keys(uint32_t keys, uint32_t ch)
 {
     int k;
+    if (ch & (((1u << PG_NLEAD) - 1u) << PG_LEAD0))
+        pg_lead(keys, ch);
     if ((ch & keys) >> LV_BASS_K & 1u) {       /* G5: the bass sounding held under the next chords, or let go */
         if (lv.pbass >= 0) {
             const int was = lv.bass;
@@ -374,6 +418,7 @@ static void pg_keys(uint32_t keys, uint32_t ch)
 static void live_home(void)                    /* HOME: back to the Live page as it was, and on it the other */
 {
     lv.to = -1;
+    pg_lead_off();
     if (ui.view == V_LIVE)
         lv.prog ^= 1u;
     else
@@ -503,8 +548,19 @@ static void live_keys(uint32_t keys, uint32_t ch)   /* the keys, on the press */
 }
 
 static int live_lh(void) { return live_q() ? lv.lh : -1; }   /* Q: the left hand's, for OCT's lights */
-static void live_oct(int up)                   /* OCT- / OCT+ on the page: the register; Q: the left hand's */
+static void live_oct(int up)                   /* OCT- / OCT+ on the page: the register; Q: the left hand's; the
+                                                * progression: the lead's */
 {
+    if (lv.prog) {
+        const int o = lv.loct + (up ? 1 : -1);
+        if (o < -1 || o > 1)
+            return;
+        lv.loct = (int8_t)o;
+        say("LEAD", o > 0 ? "AN OCTAVE UP" : o < 0 ? "AN OCTAVE DOWN" : "AS THE KEYS");
+        if (lv.nlead)
+            pg_lead(0, 0);                     /* (the note held, there now: a glide) */
+        return;
+    }
     if (live_q()) {                            /* the bass alone (OCT-), the root alone (OCT+), the lit one: both */
         lv.lh = (uint8_t)(lv.lh == (up ? 2 : 1) ? 0 : up ? 2 : 1);
         say("LEFT HAND", lv.lh == 1 ? "THE BASS ALONE" : lv.lh == 2 ? "THE ROOT ALONE" : "ROOT AND BASS");
@@ -524,6 +580,83 @@ static void live_snap(int32_t e)               /* ALGORITHM on the page: Snap */
     lv.snap = (uint8_t)(v < 0 ? 0 : v > 100 ? 100 : v);
     scopy(ui.glab[0], lv.snap < DR_SNAP_LEGATO ? "SNAP: WASH" : lv.snap < DR_SNAP_PAD ? "SNAP: LEGATO" : "SNAP: PAD");
     itoa_u(lv.snap, ui.glab[1]);
+    ui.glab_until = plat_ms() + 1500u;
+    ui.act_t = plat_ms();
+}
+
+#define LV_NPRESET 3                           /* the PRESET encoder's: P1 .. P3 */
+static void live_preset(int32_t e)             /* PRESETS on the page: the next or previous Preset */
+{
+    int n = proj.bank == BANK_PRESETS && ui.scene_at >= 0 && ui.scene_at < LV_NPRESET ? ui.scene_at : lv.preset;
+    char *q = ui.glab[1];
+    n += e > 0 ? 1 : -1;
+    n = n < 0 ? 0 : n >= LV_NPRESET ? LV_NPRESET - 1 : n;
+    if (n != lv.preset || ui.scene_at != n)
+        preset_go(n);
+    lv.preset = (uint8_t)n;
+    scopy(ui.glab[0], "PRESET");
+    *q++ = 'P';
+    *q++ = (char)('1' + n);
+    *q++ = ' ';
+    scopy(q, preset_name(n));
+    ui.glab_until = plat_ms() + 1500u;
+    ui.act_t = plat_ms();
+}
+
+static const char *const ARP_DIV_NAME[DR_ARP_NDIV] = {"1/4", "1/8", "1/8T", "1/16"};
+static const char *const ARP_PAT_NAME[DR_ARP_NPAT] = {"UP", "UP 2 OCT", "DOWN", "DOWN 2 OCT", "UP-DOWN", "UP-DOWN 2 OCT",
+                                                       "RANDOM", "RANDOM 2 OCT"};
+static void live_arp(void)                     /* ARP tapped on the page: the arp on / off */
+{
+    lv.arp ^= 1u;
+    dr_arp(lv.arp);
+    scopy(ui.glab[0], "ARP");
+    scopy(ui.glab[1], lv.arp ? "ON" : "OFF");
+    ui.glab_until = plat_ms() + 1500u;
+    ui.act_t = plat_ms();
+}
+static int live_arp_on(void) { return lv.arp; }
+static void live_arp_knob(int i, int32_t e)    /* ARP held, a knob: Tempo, Division, Pattern, Length */
+{
+    char *q = ui.glab[1];
+    int v;
+    switch (i) {
+    case 0:
+        v = (int)lv.abpm + (int)e;
+        lv.abpm = (uint8_t)(v < DR_ARP_BPM_MIN ? DR_ARP_BPM_MIN : v > DR_ARP_BPM_MAX ? DR_ARP_BPM_MAX : v);
+        dr_arp_set(0, lv.abpm);
+        scopy(ui.glab[0], "ARP TEMPO");
+        if (dr_ext_spb > 0.0f)
+            scopy(q, "MIDI CLOCK");
+        else {
+            itoa_u(lv.abpm, q);
+            while (*q)
+                q++;
+            scopy(q, " BPM");
+        }
+        break;
+    case 1:
+        v = (int)lv.adiv + (e > 0 ? 1 : -1);
+        lv.adiv = (uint8_t)(v < 0 ? 0 : v >= DR_ARP_NDIV ? DR_ARP_NDIV - 1 : v);
+        dr_arp_set(1, lv.adiv);
+        scopy(ui.glab[0], "ARP DIVISION");
+        scopy(q, ARP_DIV_NAME[lv.adiv]);
+        break;
+    case 2:
+        v = (int)lv.apat + (e > 0 ? 1 : -1);
+        lv.apat = (uint8_t)(v < 0 ? 0 : v >= DR_ARP_NPAT ? DR_ARP_NPAT - 1 : v);
+        dr_arp_set(2, lv.apat);
+        scopy(ui.glab[0], "ARP PATTERN");
+        scopy(q, ARP_PAT_NAME[lv.apat]);
+        break;
+    default:
+        v = (int)lv.alen + (int)e * 2;
+        lv.alen = (uint8_t)(v < 0 ? 0 : v > 100 ? 100 : v);
+        dr_arp_set(3, lv.alen);
+        scopy(ui.glab[0], "ARP LENGTH");
+        itoa_u(lv.alen, q);
+        break;
+    }
     ui.glab_until = plat_ms() + 1500u;
     ui.act_t = plat_ms();
 }
@@ -600,10 +733,19 @@ static void lk_live_card(int i, int32_t x, int32_t cx, int on)
         text_c(cx, 32 + (int32_t)fb->h, &FONT_U2, "semitones", LK_LABEL);
 }
 
-static void live_run(void)                     /* each frame: Dark-Bright's octave for the upper tones */
+static void live_run(void)                     /* each frame: the lead's pressure; Dark-Bright's octave for the
+                                                * upper tones */
 {
     const int d = proj.par[P_DARK];
     int r;
+    if (lv.prog && lv.nlead) {                 /* the lead's key pressed harder: brighter, more vibrato */
+        const int p = plat_pressure((uint32_t)lv.lead[lv.nlead - 1]);
+        if (p >= 0 && (p - lv.lpress > 1 || lv.lpress - p > 1)) {
+            lv.lpress = (uint8_t)p;
+            dr_lead_press(p);
+        }
+    } else
+        lv.lpress = 0;                         /* (let go, the engine's back at 0) */
     if (live_qr())                             /* (Q and R: Height places the tones) */
         return;
     r = d >= 50 ? 1 : d <= -50 ? -1 : (lv.reg > 0 && d > 40) || (lv.reg < 0 && d < -40) ? lv.reg : 0;
@@ -619,7 +761,8 @@ static int live_led(int k)                     /* a key's light on the page, 0..
     int m;
     if (lv.prog)                               /* the progression: next and previous, taking turns at full */
         return k == LV_BASS_K ? (lv.pbass >= 0 ? 255 : 0)
-                              : k > PG_PREV ? 0 : (int)(plat_ms() / 500u & 1u) == k ? 255 : 96;
+               : k > PG_PREV ? (lv.nlead && k == lv.lead[lv.nlead - 1] ? 255 : 0)
+                             : (int)(plat_ms() / 500u & 1u) == k ? 255 : 96;
     if (lv.mode == LV_R)                       /* R: the chord's keys */
         return lv.root >= 0 && (lv.rkeys >> k & 1u) ? 255 : 0;
     if (lv.mode == LV_Q && (LV_ZQ >> k & 1u))  /* Q: the shape's keys (none yet: a major triad's, dim) */

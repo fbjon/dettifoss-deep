@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): Thickness up brings the pad path in under the chords, detuned
+# pairs spread apart (the second core's voices on the FM-1). The progression's steps at Snap 80 (a pad's change: the
+# old notes release on one half of the voices while the new come in on the other, over Snap's attack and release),
+# at Snap 20 (a wash: the pad's voices glide with the drones) and at Snap 50 (legato: a short glide); then Thickness
+# to 100 under a chord, and to 0 (the pad out). Not a test of its own.
+notips
+tap PLAY
+wait 1500
+tap HOME
+turn ALGO 80
+set 87 60
+wait 600
+wav pad.wav
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+turn ALGO 20
+wait 300
+tapkey 0
+wait 3500
+tapkey 0
+wait 3500
+turn ALGO 50
+wait 300
+tapkey 0
+wait 2500
+tapkey 0
+wait 2500
+set 87 100
+wait 2500
+shot pad.png
+set 87 0
+wait 3000
+wavstop

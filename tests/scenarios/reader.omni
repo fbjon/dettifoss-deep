@@ -34,7 +34,7 @@ said BANK_PRESETS_1-8
 wait 100
 tapkey w1
 wait 300
-said to_Preset_2_EMBERS
+said to_Preset_2_WIDE
 # SEL held: the key map, then a key touched
 press SEL
 wait 600
@@ -48,11 +48,11 @@ wait 300
 # the reader asks for everything
 where
 wait 100
-said Playing,_on_its_way_to_Preset_2_EMBERS
+said Playing,_on_its_way_to_Preset_2_WIDE
 wait 9000
 where
 wait 100
-said Playing,_Preset_2_EMBERS
+said Playing,_Preset_2_WIDE
 tap PLAY
 wait 100
 said Stop

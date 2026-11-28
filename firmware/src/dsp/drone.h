@@ -288,11 +288,44 @@ void dr_chord_go(int on, int snap);
  * they're quiet the drones move to the notes sent since (dr_chord), so the next dr_chord_go comes in on them. A pad's
  * change keeping the bass's note carries it on, not released and in again */
 void dr_chord_rest(int snap, int bass);       /* bass: the bass goes on sounding through it */
+void dr_lead(int note_c, int gate);           /* the lead: a note (MIDI x 100), held (1) or let go (0) */
+#define DR_LEAD_KINDS 3
+void dr_lead_kind(int kind);                  /* the lead's sound: 0 Swell, 1 Glass, 2 Reed (a Preset's, as the pad's) */
+void dr_lead_press(int p);                    /* the held key's pressure, 0 .. 127: brighter, more vibrato */
+/* the arp: the chord's tones one at a time while a chord sounds (in the pad path) */
+#define DR_ARP_BPM_MIN 40
+#define DR_ARP_BPM_MAX 220
+#define DR_ARP_NDIV 4                          /* steps a beat: 1/4, 1/8, 1/8T, 1/16 */
+#define DR_ARP_NPAT 8                          /* Up, Up 2 oct, Down, Down 2, Up-down, Up-down 2, Random, Random 2 */
+void dr_arp(int on);
+void dr_arp_set(int what, int v);              /* 0 tempo (BPM; a MIDI clock wins), 1 division, 2 pattern, 3 length */
 #define DR_SNAP_LEGATO 34                      /* Snap's three parts: 0 .. 33 a wash, 34 .. 66 legato, 67 .. 100 a pad's */
 #define DR_SNAP_PAD 67                         /* attack (drone.c, snap_ms) */
 
 /* the render (audio ISR): n stereo frames, 24-bit in int32; gain Q12 (the MASTER pot) */
 void dr_render(int32_t *out_lr, uint32_t n, uint32_t gain_q12);
+
+/* THE PAD PATH: a stereo layer (today the lead) that another core can render while this one renders the drones; it is
+ * mixed in after the PLAY fade, before the effects. dr_render hands it over each block it sounds in, after the
+ * commands are drained, and waits for it before the effects:
+ *   hand()   1 = taken (render elsewhere: dr_pad_run, once); 0 = render it here; -1 = here, the lead alone (the
+ *            voices are the second core's: silent without it)
+ *   wait()   0 = done; else dropped (silent this block)
+ * With no hooks (the host, the emulator) it renders in place, at the same point, so the samples are the same */
+void dr_pad_hooks(int (*hand)(void), int (*wait)(void));
+void dr_pad_run(void);                         /* the block's pad path, on whichever core took it */
+/* its voices: DR_PAD_N oscillators, each a wave (DR_SINE, DR_TRI, DR_SAW; band-limited), a note (MIDI x 100, its
+ * detune in the cents), a pan (-100 left .. 100 right, equal power) and a level (0..100, 0: released); attack and
+ * release are the pad path's, in ms. They sum into one stereo low-pass: a cutoff (MIDI x 100, as a note) and a
+ * resonance (0..100) */
+#define DR_PAD_N 48
+void dr_pad_voice(int i, int note_c, int pan, int level);
+void dr_pad_wave(int i, int wave);              /* (a saw until set) */
+/* the pad Thickness brings in under a chord: its kind (fixed for now, set with a Preset): 0 saws, 1 Wide saws, 2 Felt */
+#define DR_PAD_KINDS 3
+void dr_pad_kind(int kind);
+void dr_pad_env(int attack_ms, int release_ms);
+void dr_pad_filter(int cutoff_c, int reso);
 
 /* state for the screen (UI) */
 extern volatile float dr_level[DR_NGROUPS];    /* each drone's output level, 0..~1 (peak, decaying) */

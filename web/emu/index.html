@@ -569,7 +569,7 @@ button(72, 272, 82, 38, "OCT-", "LFO I", LILAC); button(170, 272, 82, 38, "OCT+"
 el("rect", { x: 300, y: 44, width: 236, height: 236, rx: 26, fill: "#0a0a0b" });
 el("rect", { x: 568, y: 160, width: 400, height: 140, rx: 18, fill: TRAY });
 const ROW1 = [["FX", "Space"], ["SEL", "Fine"], ["ENV", "Life"], ["LFO", "Sends"], ["EDIT", "Osc"], ["GLO", "Setup"]],
-      ROW2 = [["HOME", "Live"], ["SAVE", "Store"], ["ARP", "Swell"], ["SEQ", "Partner"], ["PLAY", "On/off"], ["REC", "Loop"]];
+      ROW2 = [["HOME", "Live"], ["SAVE", "Store"], ["ARP", "Arp"], ["SEQ", "Partner"], ["PLAY", "On/off"], ["REC", "Loop"]];
 for (let i = 0; i < 6; i++) {
   button(582 + i * 63, 174, 54, 48, ...ROW1[i]);
   button(582 + i * 63, 236, 54, 48, ...ROW2[i]);
@@ -690,7 +690,7 @@ function hit(c, cls) {
 const TIP = { FX: "Space: the delay's repeats and mix, the reverb's length (to Inf) and mix (again: Details: drive, time, damp, reverb type; SEL + KNOB 2: the delay type; SEL + KNOB 4: what goes into the reverb)", SEL: "On the Live page, tap: the way chords are played, P, Q, R. Hold while turning: fine (pitch in cents, cutoff and resonance in tenths); with a gesture key: a bank (1 to 6, the presets, P9–P16); with PLAY: drone II alone",
   ENV: "Life: feedback, drift, character, age (again: Tone: noise and its color, white to pink); hold to peek", LFO: "LFO sends: each drone's pitch and cutoff sends; the keys pick the routing (again: Mods: speed mod, source, delay mod, cross-mod)",
   EDIT: "Osc: X-Wave, pulse width (again: Sub · Drive: osc mix, with SEL the sub's wave; drive); hold to peek", GLO: "Setup 1: fade, morph, scene time, sync (again: Setup 2: tuning, tune, stereo width, pressure)",
-  HOME: "The Live page: chords on the keys (again: the progression); SEL + HOME: the sound's pages, Drones and Pitch", SAVE: "Save; hold it first, then tap a white key: store a scene (in banks 1 to 6)", ARP: "Swell: tap for its page, tap again there: on / off; hold to peek", SEQ: "Partner: interval, detune (again: Pitch moves: Shift's move, pitch glide, Wander, its scale)",
+  HOME: "The Live page: chords on the keys (again: the progression); SEL + HOME: the sound's pages, Drones and Pitch", SAVE: "Save; hold it first, then tap a white key: store a scene (in banks 1 to 6)", ARP: "On the Live pages the arp: tap on / off; held, the knobs are its Tempo, Division, Pattern, Length. Elsewhere Swell: tap for its page, tap again there: on / off; hold to peek", SEQ: "Partner: interval, detune (again: Pitch moves: Shift's move, pitch glide, Wander, its scale)",
   PLAY: "Drones in / out (with SEL: drone II alone)", REC: "Motion loop: tap to record knob moves, gestures and scenes, again to loop, again to stop", "OCT-": "LFO I: tap for the next shape (with SEL: the one before)", "OCT+": "LFO II: tap for the next shape (with SEL: the one before)",
   SELECT: "LFO rate", PRESETS: "Gesture time: how long every gesture takes, left slower, right faster", ALGORITHM: "Movement: every LFO depth together",
   KNOB1: "Drone I", KNOB2: "Drone I", KNOB3: "Drone II", KNOB4: "Drone II", MASTER: "Volume" };

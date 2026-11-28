@@ -76,6 +76,38 @@ static void c2_work(uint32_t arg)                   /* on CPU1, from the flash, 
         c2_job.max_us = us;
 }
 
+/* the pad path (drone.h): each block it sounds in, CPU1 renders it while CPU0 renders the drones; CPU0 waits for
+ * it before the effects. CPU1 off (retired, barred, or busy with a test job): CPU0 renders the lead alone, which is
+ * light, and the pad's voices are silent; a job dropped by a retirement is a silent pad path for that one block */
+static uint32_t c2_pad_t0;
+static void c2_pad_job(uint32_t arg)                /* on CPU1, from the flash */
+{
+    uint32_t us;
+    (void)arg;
+    dr_pad_run();
+    us = (fm1_ticks() - c2_pad_t0) / FM1_TICKS_PER_US;   /* from the hand-over */
+    c2_job.passes++;
+    c2_job.last_us = us;
+    if (us > c2_job.max_us)
+        c2_job.max_us = us;
+}
+
+static int c2_pad_hand(void)
+{
+    c2_pad_t0 = fm1_ticks();
+    return fm1_cpu1_run(c2_pad_job, 0) ? 1 : -1;
+}
+
+static int c2_pad_wait(void)
+{
+    uint32_t w0 = fm1_ticks(), w;
+    const int r = fm1_cpu1_wait();
+    w = (fm1_ticks() - w0) / FM1_TICKS_PER_US;
+    if (w > c2.wait_max_us)
+        c2.wait_max_us = w;
+    return r;
+}
+
 static void c2_start(void)                          /* power-on, before the audio and the timers */
 {
     static const char when[] = __DATE__ " " __TIME__;
@@ -88,6 +120,8 @@ static void c2_start(void)                          /* power-on, before the audi
     fm1_cpu1_bar_build(id);                         /* a bar a crash set for an earlier build is lifted */
     if (!bootguard.failed && !safe_mode)            /* not after a failed start: one core */
         c2.two = fm1_cpu1_start() == 0;
+    if (c2.two)
+        dr_pad_hooks(c2_pad_hand, c2_pad_wait);
 }
 
 static int c2_hand_over(void)                       /* the audio block's start: a test job, if one is asked for */

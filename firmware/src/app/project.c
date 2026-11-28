@@ -26,7 +26,8 @@ static uint32_t proj_hash(void)
 
 /* the Presets (0.3, Evan, 2026-11-09, after eight audition rounds): two banks of eight, P1 the starting sound, P16 the
  * bare one (one oscillator, everything off); between them sounds that move and show what the synth can do, in
- * different moods. Each a list of changes from the defaults, ended by -1; all fixed. The drones' levels set so each
+ * different moods. P1-P3 are Dettifoss Deep's, the PRESET encoder's on the Live page (2026-11-27: a start on its own
+ * presets; Niagara's EMBERS and VESPERS made way); the rest Niagara's. Each a list of changes from the defaults, ended by -1; all fixed. The drones' levels set so each
  * one's loud moments meet P1's (the mean of A-weighted and 200 Hz high-passed power, 95th percentile of 0.4 s);
  * Dreamhouse and Ashram 3 dB under that, Tape 2 dB: loud on headphones, where bass counts (Evan, 2026-11-14) */
 #define I_(p) DR_GP(0, p)
@@ -42,21 +43,20 @@ static const int16_t PRESET_CHANGES[][PRESET_N + 1] = {
     {P_PULSE, 0, I_(GP_FLFO_DEPTH), 35, II_(GP_FLFO_DEPTH), -35, I_(GP_RESO), 100, II_(GP_RESO), 100, P_SUBW_0, 1,
      P_SUBW_1, 1, II_(GP_MIX), 0, I_(GP_WAVE), 60, II_(GP_WAVE), 60, I_(GP_LEVEL), 66, II_(GP_LEVEL), 66,
      P_DLY_LFO_DEPTH, 5, P_DLY_MIX, 18, P_DRIFT, 15, P_LFO_W2, 1, -1},
-    /* P2 EMBERS: triangles blooming toward saws and back, the two drones in turn, a pure-third partner each, a chorus
-     * hall; Chord on major pentatonic (Evan, 2026-11-13: minor clashed with its F#); no Swell, the bloom its movement
-     * (Evan, 2026-11-14: five Presets breathing with P1's Swell sounded too much the same) */
-    {I_(GP_WAVE), 40, I_(GP_INTERVAL), 13, I_(GP_DETUNE), 10, I_(GP_CUTOFF), 700, I_(GP_RESO), 300,
-     I_(GP_OLFO_DEPTH), 71, I_(GP_OLFO_DEST), 1, II_(GP_PITCH), 5386, II_(GP_WAVE), 40, II_(GP_INTERVAL), 13,
-     II_(GP_DETUNE), 10, II_(GP_CUTOFF), 700, II_(GP_RESO), 300, II_(GP_LEVEL), 80, II_(GP_OLFO), 1,
-     II_(GP_OLFO_DEPTH), -71, II_(GP_OLFO_DEST), 1, P_LFO_RATE, 78, P_PULSE_DEPTH, 30, P_DLY_MIX, 20, P_REV_MIX, 50,
-     P_REV_TYPE, 3, P_CHAR, 15, P_DLY_TYPE, 1, P_WSCALE, 1, P_PULSE, 0, -1},
-    /* P3 VESPERS: saws through band-passes near a sung "ah", the waves morphing, a bright Cathedral; Chord on Just
-     * 1-8 (Evan, 2026-11-13: minor clashed with its F#) */
-    {I_(GP_INTERVAL), 9, I_(GP_MIX), 10, I_(GP_CUTOFF), 520, I_(GP_RESO), 450, I_(GP_MODE), 1, I_(GP_LEVEL), 100,
-     I_(GP_OLFO_DEPTH), 45, I_(GP_OLFO_DEST), 1, I_(GP_FLFO_DEPTH), 18, II_(GP_WAVE), 67, II_(GP_INTERVAL), 13,
-     II_(GP_MIX), 0, II_(GP_CUTOFF), 595, II_(GP_RESO), 450, II_(GP_MODE), 1, II_(GP_LEVEL), 100,
-     II_(GP_OLFO_DEPTH), 55, II_(GP_OLFO_DEST), 1, II_(GP_FLFO_DEPTH), -18, P_LFO_RATE, 45, P_PULSE_RATE, 20,
-     P_PULSE_DEPTH, 30, P_DLY_MIX, 15, P_REV_MIX, 55, P_MOVE, 60, P_REV_LEN, 85, P_REV_DAMP, 20, P_WSCALE, 5, -1},
+    /* P2 WIDE: P1 spread out: both waves saws, their partners detuned wide (18 and 14 cents), the drones apart in the
+     * stereo, a Wide delay and EMBERS' chorus hall (Niagara's P2), a touch of Character to round the saws' edges */
+    {P_PULSE, 0, I_(GP_FLFO_DEPTH), 30, II_(GP_FLFO_DEPTH), -30, I_(GP_RESO), 100, II_(GP_RESO), 100, P_SUBW_0, 1,
+     P_SUBW_1, 1, II_(GP_MIX), 0, I_(GP_WAVE), 67, II_(GP_WAVE), 67, I_(GP_DETUNE), 60, II_(GP_DETUNE), 45,
+     I_(GP_CUTOFF), 640, II_(GP_CUTOFF), 660,
+     I_(GP_LEVEL), 58, II_(GP_LEVEL), 58, P_WIDTH, 100, P_DLY_TYPE, 1, P_DLY_MIX, 20, P_DLY_LFO_DEPTH, 8,
+     P_REV_TYPE, 3, P_REV_MIX, 45, P_DRIFT, 25, P_LFO_W2, 1, -1},
+    /* P3 FELT: soft and close: near-triangles with sine subs (SIBYL's soft waves, Niagara's P8), the filters low and
+     * barely resonant, breathing slowly; a short dark Hall, little delay, Character for softer edges */
+    {P_PULSE, 0, I_(GP_FLFO_DEPTH), 20, II_(GP_FLFO_DEPTH), -20, I_(GP_RESO), 40, II_(GP_RESO), 40, P_SUBW_0, 1,
+     P_SUBW_1, 1, II_(GP_MIX), 0, I_(GP_WAVE), 28, II_(GP_WAVE), 25, I_(GP_DETUNE), 15, II_(GP_DETUNE), 12,
+     I_(GP_CUTOFF), 520, II_(GP_CUTOFF), 540, I_(GP_LEVEL), 66, II_(GP_LEVEL), 63, P_WIDTH, 45, P_DLY_MIX, 10,
+     P_DLY_LFO_DEPTH, 5, P_REV_TYPE, 1, P_REV_MIX, 38, P_REV_LEN, 55, P_REV_DAMP, 70, P_CHAR, 30, P_DRIFT, 20,
+     P_LFO_RATE, 66, P_LFO_W2, 1, -1},
     /* P4 DREAMHOUSE: on Harmonics: A1 and its 7th harmonic, sines, partners pure fifths, the resonance swelling, a
      * little Feedback */
     {I_(GP_PITCH), 3300, I_(GP_WAVE), 20, I_(GP_INTERVAL), 13, I_(GP_DETUNE), 0, I_(GP_MIX), 0, I_(GP_CUTOFF), 700,
@@ -150,9 +150,18 @@ static const int16_t PRESET_CHANGES[][PRESET_N + 1] = {
      P_DLY_MIX, 0, P_REV_MIX, 0, P_DLY_LFO_DEPTH, 0, P_II_OUT, 1, P_MOVE, 0, -1},
 };
 #define NPRESETS ((int)(sizeof PRESET_CHANGES / sizeof PRESET_CHANGES[0]))
-static const char *const PRESET_NAME[] = {"DETTIFOSS", "EMBERS", "VESPERS", "DREAMHOUSE", "ABYSS", "NIAGARA", "SONAR", "SIBYL",
+static const char *const PRESET_NAME[] = {"DETTIFOSS", "WIDE", "FELT", "DREAMHOUSE", "ABYSS", "NIAGARA", "SONAR", "SIBYL",
                                           "HOWL", "CISTERN", "PISTON", "ASHRAM", "TELEGRAPH", "TAPE", "FALLING", "BARE"};
 _Static_assert(sizeof PRESET_NAME / sizeof PRESET_NAME[0] == NPRESETS, "a name for each Preset");
+/* the pad Thickness brings in under a chord and the lead's sound, a Preset's (one index for both, drone.h's
+ * DR_PAD_KINDS and DR_LEAD_KINDS; fixed for now, not saved: a sound recalled from a bank keeps the one before) */
+static const uint8_t PRESET_PAD[] = {0, 1, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0};
+_Static_assert(sizeof PRESET_PAD == NPRESETS, "a pad for each Preset");
+int preset_pad(int bank, int n)
+{
+    n += bank == BANK_PRESETS2 ? NPLAY : 0;
+    return BANK_IS_PRESETS(bank) && n >= 0 && n < NPRESETS ? PRESET_PAD[n] : -1;
+}
 const char *preset_name(int n)             /* a Preset's name */
 {
     return n >= 0 && n < NPRESETS ? PRESET_NAME[n] : 0;
