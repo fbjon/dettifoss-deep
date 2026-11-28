@@ -1078,8 +1078,9 @@ static struct {
     arv_t v[AR_N];
     float ph, inc;                              /* the step's phase (0 .. 1) at the block's start, a sample's step */
     float note[4], dec, g;                      /* the tones (ascending, MIDI); a note's decay per second; the level */
+    float last;                                 /* the last note played (MIDI): a new chord goes on from it */
     uint32_t step, rnd;
-    uint8_t on, play, nn, pat, div, bpm, len, next, live, wave;
+    uint8_t on, play, nn, pat, div, bpm, len, next, live, wave, hl;   /* hl: last holds a note */
 } ar __attribute__((aligned(32))) = {.bpm = 90, .div = 1, .len = 40, .rnd = 12345u};
 /* THE PAD PATH'S VOICES (drone.h): set by drain, the rest by the core that renders them. pv_live: how many sound,
  * as the last block left them (or a level just set), read here at the next block's start */
@@ -3473,11 +3474,49 @@ static __attribute__((noinline)) void lead_run(uint32_t n)             /* into p
     }
 }
 
-/* the arp's next note (the pattern: up, down, up and down, random; over one octave or two) */
+/* the arp's run of L notes, the tones over one octave or two: the first above the last note played (up), or the last
+ * under it (down); -1 none (half a semitone apart: a tone gliding to its next chord's isn't a new one) */
+static int arp_from(int L, int up)
+{
+    int i;
+    if (up) {
+        for (i = 0; i < L; i++)
+            if (ar.note[i % ar.nn] + (float)(12 * (i / ar.nn)) > ar.last + 0.5f)
+                return i;
+        return -1;
+    }
+    for (i = L - 1; i >= 0; i--)
+        if (ar.note[i % ar.nn] + (float)(12 * (i / ar.nn)) < ar.last - 0.5f)
+            return i;
+    return -1;
+}
+
+/* the arp's next note (the pattern: up, down, up and down, random; over one octave or two). Up, down and up and down
+ * go on from the last note played, whatever the chord now: the next tone up (or down) from it, turning at the ends as
+ * the pattern does, so a new chord continues the line rather than starting over */
 static float arp_note(void)
 {
     const int nn = ar.nn, two = ar.pat & 1, L = nn * (two ? 2 : 1), kind = ar.pat >> 1;
     int i;
+    if (ar.hl && kind < 3 && L > 1) {           /* where the line goes on: the step that plays it */
+        if (kind == 0) {
+            i = arp_from(L, 1);
+            ar.step = (uint32_t)(i < 0 ? 0 : i);
+        } else if (kind == 1) {
+            i = arp_from(L, 0);
+            ar.step = (uint32_t)(L - 1 - (i < 0 ? L - 1 : i));
+        } else {
+            const int per = 2 * L - 2, k = (int)(ar.step % (uint32_t)per);
+            int u = k >= 1 && k < L;             /* (the next step goes up: k 1 .. L - 1; down: L .. per - 1, 0) */
+            i = arp_from(L, u);
+            if (i < 0) {                         /* past the end: turned */
+                u = !u;
+                i = arp_from(L, u);
+                i = i < 0 ? 0 : i;
+            }
+            ar.step = (uint32_t)(u ? i : (per - i) % per);
+        }
+    }
     if (kind == 3) {                             /* random: not the same twice */
         ar.rnd = ar.rnd * 1664525u + 1013904223u;
         i = (int)((ar.rnd >> 16) % (uint32_t)(L > 1 ? L - 1 : 1));
@@ -3491,7 +3530,9 @@ static float arp_note(void)
     }
     ar.next = (uint8_t)i;
     ar.step++;
-    return ar.note[i % nn] + (float)(12 * (i / nn));
+    ar.last = ar.note[i % nn] + (float)(12 * (i / nn));
+    ar.hl = 1;
+    return ar.last;
 }
 static __attribute__((noinline)) void arp_run(uint32_t n)
 {
