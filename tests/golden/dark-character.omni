@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): Dark-Bright as the sound's character over the demo progression
+# (the progression page, a step each 3.5 s): -100, 0, 50, 100, then gliding back to 0. Not a test of its own.
+notips
+tap PLAY
+wait 1500
+tap HOME
+wait 1500
+wav dark-character.wav
+set 86 -100
+tapkey 0
+wait 3500
+set 86 0
+tapkey 0
+wait 3500
+set 86 50
+tapkey 0
+wait 3500
+set 86 100
+tapkey 0
+wait 3500
+shot bright.png
+set 86 0
+tapkey 0
+wait 3500
+wavstop

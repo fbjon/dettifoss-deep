@@ -776,6 +776,8 @@ typedef struct {
     float pl, pr;                                 /* the pan's gains where the last block ended (Stereo) */
     /* MORPH: where each switch's change has got to, moving to its setting over the Morph time */
     float wm[3];                                  /* the filter mode's weights: LP, BP, HP */
+    float hx;                                     /* Bright's high-pass: how far it has risen, 0..1 (gliding) */
+    float hs1, hs2;                               /* ... its two one-poles' states (12 dB an octave) */
     float pg;                                     /* the partner's gain, 0..1 */
     float pm, lm, pe;                             /* Thickness: the partner's share left and the drone's (gliding);
                                                    * the partner's gain heard, pg x pm */
@@ -1305,10 +1307,15 @@ static const move_t AGE_MV[MV_N] = {
 /* THE LIVE MACROS: four knobs, each two rows of moves, down (to -100) and up (to 100), at 0 nothing. A knob is where it
  * is, so a move's window is only its way in (in0 .. in1 of the turn): the parts arrive in order as the knob turns */
 #define LIVE_N 10
+#define DK_HP_IN 30                              /* Bright: its high-pass rises from here (% of the way) */
+static const float DK_HP_HZ[DR_NGROUPS] = {270.0f, 520.0f};   /* ... to here at 100, each drone's */
+static float dk_hp;                              /* how far it has risen now, 0..1 (20 Hz .. DK_HP_HZ, exponential) */
 static const move_t LIVE_MV[4][2][LIVE_N] = {
-    /* DARK-BRIGHT: the cutoffs first, the whole way; then, darker, the noise goes, the waves soften toward the sine,
-     * the sub comes up and the reverb's tail darkens; brighter, the waves toward the saw, a little resonance, the
-     * tail opens */
+    /* DARK-BRIGHT, the sound's character (Frej, 2026-11-28: low-pass and brooding .. balanced, open .. thin and
+     * high-passed; it moves no notes). Darker: the cutoffs down the whole way, then the noise goes, the waves soften
+     * toward the sine, the sub comes up and the reverb's tail darkens. Brighter: the cutoffs open the whole way, the
+     * tail opens, the waves toward the saw, a little resonance; past 30 a high-pass under each drone (dk_hp) rises
+     * from 20 Hz to thin it, drone I's to ~270 Hz, drone II's to ~520 Hz */
     {{{DR_GP(0, GP_CUTOFF), MK_ADD, -250, 0, 100, 0, 0}, {DR_GP(1, GP_CUTOFF), MK_ADD, -250, 0, 100, 0, 0},
       {DR_GP(0, GP_NOISE), MK_ZERO, 60, 20, 80, 0, 0}, {DR_GP(1, GP_NOISE), MK_ZERO, 60, 20, 80, 0, 0},
       {DR_GP(0, GP_WAVE), MK_ZERO, 50, 40, 100, 0, 0}, {DR_GP(1, GP_WAVE), MK_ZERO, 50, 40, 100, 0, 0},
@@ -1316,7 +1323,7 @@ static const move_t LIVE_MV[4][2][LIVE_N] = {
       {P_REV_DAMP, MK_TO, 85, 20, 100, 0, 0}},
      {{DR_GP(0, GP_CUTOFF), MK_ADD, 250, 0, 100, 0, 0}, {DR_GP(1, GP_CUTOFF), MK_ADD, 250, 0, 100, 0, 0},
       {DR_GP(0, GP_WAVE), MK_TO, 67, 30, 100, 0, 0}, {DR_GP(1, GP_WAVE), MK_TO, 67, 30, 100, 0, 0},
-      {DR_GP(0, GP_RESO), MK_ADD, 80, 40, 100, 0, 0}, {DR_GP(1, GP_RESO), MK_ADD, 80, 40, 100, 0, 0},
+      {DR_GP(0, GP_RESO), MK_ADD, 40, 40, 100, 0, 0}, {DR_GP(1, GP_RESO), MK_ADD, 40, 40, 100, 0, 0},
       {P_REV_DAMP, MK_ZERO, 0, 0, 60, 0, 0}}},
     /* THICKNESS: thinner, the beating goes and the voices leave one by one, the top first: drone II's partner, drone II,
      * drone I's partner, to the bass alone; thicker, the partners on and beating, the drones wider apart, under a
@@ -1636,6 +1643,7 @@ static void macro_apply(uint32_t n)              /* the offsets again, n samples
         }
     }
     dk_mk = base[P_DARK] < 0 ? fm_exp2f(AGE_MK * (1.0f / 6.0206f) * (float)base[P_DARK] * -0.01f) : 1.0f;
+    dk_hp = base[P_DARK] > 0 ? mv_ease((float)base[P_DARK] * 0.01f, DK_HP_IN, 100) : 0.0f;
     for (m = 0; m < 4; m++) {                    /* THE LIVE MACROS: where each knob is */
         const int lv = base[P_DARK + m];
         const float a = (float)(lv < 0 ? -lv : lv) * 0.01f;
@@ -2499,6 +2507,7 @@ static void morph_snap(int g)                    /* all of a drone's switches wh
     int i;
     for (i = 0; i < 3; i++)
         v->wm[i] = p[GP_MODE] == i ? 1.0f : 0.0f;
+    v->hx = dk_hp;
     v->pg = (v->con ? v->cpon : p[GP_PARTNER] != 0) ? 1.0f : 0.0f;
     v->pm = th_pm[g];
     v->lm = th_gm[g];
@@ -2534,6 +2543,7 @@ static void morph_tick(int g, float step)        /* one control tick of the swit
     int i;
     for (i = 0; i < 3; i++)
         v->wm[i] = toward(v->wm[i], p[GP_MODE] == i ? 1.0f : 0.0f, step);
+    v->hx = toward(v->hx, dk_hp, TH_STEP);
     v->pg = v->cia ? toward(v->pg, (v->con ? v->cpon : p[GP_PARTNER] != 0) ? 1.0f : 0.0f, fm_maxf(step, v->cpgs))
                    : toward(v->pg, p[GP_PARTNER] ? 1.0f : 0.0f, step);
     v->pm = toward(v->pm, th_pm[g], TH_STEP);
@@ -2817,7 +2827,8 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
         float inc, pinc, sinc, lk, ilk, mlk, plk, slk, gc, a1, a2, a3, gstep, gend, lend, lstep, lv = v->lv, ph = v->ph, pph = v->pph,
               sph = v->sph, om, fmod, fl, pmod, xw, wf, og, sg, xd, xpd, xh = v->xh, xc = v->xc, wl, wb, wh, sy, r, fbn, fsn;
         int wi, sync, sw = v->sw;
-        float ic1 = v->ic1, ic2 = v->ic2, bc = v->bc, gf = v->gf, peak = v->peak, bk;
+        float ic1 = v->ic1, ic2 = v->ic2, bc = v->bc, gf = v->gf, peak = v->peak, bk, hg = 0.0f, hm = 1.0f, hs1 = v->hs1,
+              hs2 = v->hs2;
         float z0 = v->nz[0], z1 = v->nz[1], z2 = v->nz[2], z3 = v->nz[3], z4 = v->nz[4], z5 = v->nz[5], nh = v->nh;
         uint32_t nn = v->nn;                    /* the noise's states, kept in registers through the tick */
         uint32_t j, je = j0 + CR < n ? j0 + CR : n;
@@ -2987,6 +2998,13 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
         a2 = gc * a1;
         a3 = gc * a2;
         bk = 0.5f * gc / (1.0f + 0.5f * gc);     /* the makeup's one-pole, an octave under the cutoff */
+        if (v->hx > 0.0005f) {                   /* Bright's high-pass, 20 Hz .. DK_HP_HZ (g = pi f / sr: tan's error
+                                                  * under 1 % this low) */
+            const float hg0 = 3.14159265f * 20.0f * fm_exp2f(v->hx * fm_log2f(DK_HP_HZ[g] * (1.0f / 20.0f))) * (1.0f / DR_SR);
+            hg = hg0 / (1.0f + hg0);
+            hm = 1.0f + 0.4f * v->hx * v->hx;    /* what it takes off, given back (loudness within ~1 dB) */
+        } else
+            hs1 = hs2 = 0.0f;
         gend = v->gtarget > gf ? fm_minf(gf + frate, v->gtarget) : fm_maxf(gf - frate, v->gtarget);
         gstep = (gend - gf) * (1.0f / (float)CR);
         lend = lv + (lvl * v->lm * fm_exp2f(dw * 0.4f * v->wn[2]) - lv) * 0.06f;   /* ~6 ms: a Level turn never
@@ -3130,6 +3148,16 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
             ic1 = sat(2.0f * v1 - ic1);
             ic2 = 2.0f * v2 - ic2;
             y += wl * v2 + wb * v1 + wh * (x - k * v1 - v2);   /* the mode, crossfading on a switch */
+            if (hg > 0.0f) {                    /* BRIGHT's high-pass: two one-poles (TPT), what passes their low-pass
+                                                * taken away, the level made up */
+                float t = (y - hs1) * hg, l = t + hs1;
+                hs1 = l + t;
+                y -= l;
+                t = (y - hs2) * hg;
+                l = t + hs2;
+                hs2 = l + t;
+                y = (y - l) * hm;
+            }
             gf += gstep;
             lv += lstep;
             a = gf * gf * lv * sy * lk;
@@ -3194,6 +3222,8 @@ static DR_RAM_CODE void render_group(int g, uint32_t n)
         v->ic1 = fm_flush(ic1);
         v->ic2 = fm_flush(ic2);
         v->bc = fm_flush(bc);
+        v->hs1 = fm_flush(hs1);
+        v->hs2 = fm_flush(hs2);
         v->nz[0] = z0;
         v->nz[1] = z1;
         v->nz[2] = z2;
