@@ -463,6 +463,10 @@ static int expect(const char *what, const char *val)
         got = lv.abpm;
     else if (!strcmp(what, "kpage"))
         got = lv.page;
+    else if (!strcmp(what, "top"))                 /* the chord's top note, MIDI; its notes (0 the bass) */
+        got = lv.top;
+    else if (!strncmp(what, "note", 4) && what[4] >= '0' && what[4] <= '3')
+        got = lv.note[what[4] - '0'];
     else if (!strcmp(what, "fade"))                /* the PLAY fade x 100 */
         got = (int)(dr_fade * 100.0f + 0.5f);
     else if (!strcmp(what, "view"))

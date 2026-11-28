@@ -1,0 +1,32 @@
+# the voicing (CHORDS' Height and Spread, every way to play chords): Height is the top note, the chord tone nearest it;
+# the other two hang under it by Spread; a chord change keeps the top near (the voices lead); a Height detent is the
+# next chord tone. MIDI notes: C3 48, C5 72.
+tapkey 7
+wait 300
+# C: the top C5 at Height C5, E4 and G4 under it (Spread 12: the middle near A#4, the lowest near C4)
+expect top 72
+expect note0 48
+expect note2 64
+expect note1 67
+expect note3 72
+# Am (the black key F#4 arms minor): its top stays near, A4 or C5; C5 the nearer
+tapkey 13
+tapkey 4
+wait 300
+expect top 72
+# back to C, Height a detent up: E5, then a detent down: C5 again
+tapkey 13
+tapkey 7
+wait 300
+kpage 1
+turn K2 1
+wait 300
+expect top 76
+turn K2 -1
+wait 300
+expect top 72
+# Spread 0: close under the top, each the nearest below: G4, then E4
+turn K3 -12
+wait 300
+expect note1 67
+expect note2 64

@@ -19,10 +19,10 @@
  *   ALGORITHM      Motion speed: the LFO rate (Motion, KNOB 3, is how much)
  *   CHORDS' KNOB 1 Snap: how a change lands: a wash (a slow glide) .. legato (a short one) .. a pad's attack
  *
- * A chord is a bass and three tones over it: drone I's main note the bass, its partner the fifth, drone II's main
- * the third (or the sus), its partner the extension (or the root two octaves up), so Thickness, turned down, takes the
- * extension away first, then the third, then the fifth. Dark-Bright past +-50 moves the upper two tones an octave
- * (back inside +-40).
+ * A chord is a bass and three tones over it: the third (or the sus), the fifth, the extension (or the root). Where they
+ * sound is the voicing's (CHORDS' Height, the top note, and Spread: lv_voice); drone I's main note is the bass, drone
+ * II's main the tone kept first, its partner the one needed least, drone I's partner the other, so Thickness, turned
+ * down, takes the least needed away first.
  *
  * THE PROGRESSION (HOME on the Live page; HOME again: the chords): a progression's chords stepped through, a lead
  * on the keys above:
@@ -66,7 +66,7 @@ static struct {
     int8_t bass;                               /* the bass set apart: its root key, or -1 (the chord's root) */
     uint8_t bass_arm;                          /* Bass tapped: the next root key sets the bass */
     int8_t oct;                                /* the register, octaves */
-    int8_t reg;                                /* Dark-Bright's octave for the upper tones now: -1, 0, 1 */
+    int8_t top;                                /* the top note sounding (MIDI), 0 none yet: Height's next step */
     uint8_t snap;
     int16_t note[4];                           /* the chord's notes as sent, MIDI: bass, fifth, third, extension */
     uint8_t prog;                              /* the progression's page */
@@ -77,8 +77,8 @@ static struct {
     int8_t pbass;                              /* ... a bass held under it (a root key), -1 none */
     int16_t pnote;                             /* ... its note, MIDI, at no octave shift: it stays put */
     uint8_t mode;                              /* the chords' keys: LV_P, LV_Q, LV_R (SEL) */
-    int8_t height;                             /* Q and R: the window's middle, MIDI (KNOB 1) */
-    int8_t spread;                             /* ... how far apart its three tones sit, semitones (KNOB 2) */
+    int8_t height;                             /* HEIGHT: the top note, MIDI, the octave's shift aside (CHORDS' KNOB 2) */
+    int8_t spread;                             /* SPREAD: how far down from it the other two reach, semitones */
     uint16_t shape;                            /* Q: the right hand's shape, its tones over C (bit 0 C .. 11 B); 0
                                                 * none yet (a major triad) */
     uint32_t rkeys;                            /* R: the keys of the chord (latched) */
@@ -109,14 +109,13 @@ static struct {
  *      down, no higher than E3), the rest its tones. One key alone: its fifth and octave over it. While a key is held,
  *      a tap of a key in the chord takes it out (one held on while another is let go stays: the hand moved on)
  * In Q and R the tones aren't played where the keys are: up to three of them (the third and seventh kept first, the
- * root and fifth dropped first) are placed by a window: CHORDS' KNOB 2 HEIGHT its middle, KNOB 3 SPREAD how far apart
- * the three sit (0 close, around Height; 12 an octave from the lowest to the highest; 36 three octaves), each the nearest
- * of its pitch class to its place, so turning Height goes through the inversions. A knob's change glides (Snap's wash, else legato), never a pad's attack */
+ * root and fifth dropped first) are placed by the voicing below, as P's are */
 enum { LV_P, LV_Q, LV_R, LV_NMODE };
 #define LV_ZQ 0x03FFF000u                      /* Q's right hand: F4 .. F#5, keys 12 .. 25 */
 #define LV_ALL 0x07FFFFFFu                     /* every key, F3 .. G5 */
-#define LV_H_LO 40
-#define LV_H_HI 84
+#define LV_H_LO 52                             /* Height: E3 .. C7 */
+#define LV_H_HI 96
+#define LV_H_DEF 72                            /* ... C5 */
 #define LV_S_HI 36
 static int live_qr(void) { return lv.mode != LV_P && !lv.prog; }
 static int live_q(void) { return lv.mode == LV_Q && !lv.prog; }
@@ -153,7 +152,7 @@ static void lv_name(int root, uint8_t m, int bass, char *t)   /* "Am7", "Csus4/G
     }
 }
 
-/* Q and R: the chord's name from its pitch classes (bit 0 C), and its notes by the window */
+/* Q and R: the chord's name from its pitch classes (bit 0 C), and its tones for the voicing */
 static const char *const LV_IV[12] = {"1", "b2", "2", "b3", "3", "4", "b5", "5", "b6", "6", "b7", "7"};
 static const struct { uint16_t m; char s[6]; } LV_KIND[] = {
     {0x091, ""}, {0x089, "m"}, {0x085, "sus2"}, {0x0A1, "sus4"}, {0x491, "7"}, {0x891, "maj7"}, {0x489, "m7"},
@@ -205,46 +204,70 @@ static int lv_near(int pc, int t)              /* pitch class pc's note nearest 
     const int n = t - ((t - pc) % 12 + 12) % 12;
     return t - n > 6 ? n + 12 : n;
 }
-static void lv_window(uint16_t pcs, int r, int bass, int16_t *u)   /* up to three of pcs placed by the window, rising */
+/* THE VOICING (every way to play chords, and the progression): the chord's three upper tones (the third, the seventh,
+ * the ninth kept first: LV_KEEP) placed under HEIGHT, the top note, and reaching down by SPREAD. The top is the tone
+ * nearest Height (so a chord change lands its top nearest the last one's: the voices lead); the other two below it,
+ * near Spread / 2 and Spread under it (0: close under it, the nearest below; 12 an octave from the top to the lowest;
+ * 36 three octaves), each as near as its pitch class goes, never the top's note or each other's. All of them over the
+ * bass. u[] by the tones' rank, not their height: u[0] the one kept first (drone II's main), u[1] drone I's partner,
+ * u[2] drone II's partner (so Thickness, turned down, takes the least needed away first) */
+static int lv_below(int pc, int t, int under)   /* pc's note nearest t, under note under */
 {
-    static const uint8_t PERM[6][3] = {{0, 1, 2}, {0, 2, 1}, {1, 0, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}};
-    const uint16_t m = lv_rot(pcs, r);
-    const int h = lv.height + 12 * lv.oct;
-    int tone[3], n = 0, i, j, p, best = 1 << 30, at[3];
+    int v = lv_near(pc, t);
+    while (v >= under)
+        v -= 12;
+    return v;
+}
+static int lv_tones(uint16_t m, int r, int *tone)   /* up to three of pitch classes m (over root r: bit 0 r), by rank */
+{
+    int n = 0, i;
     for (i = 0; i < 12 && n < 3; i++)
         if (m >> LV_KEEP[i] & 1u)
             tone[n++] = (r + LV_KEEP[i]) % 12;
     if (!n)
         tone[n++] = r;
-    for (i = n; i < 3; i++)                    /* fewer than three: doubled */
+    return n;
+}
+static int lv_dist(int a, int b) { return a > b ? a - b : b - a; }
+static void lv_voice(int *tone, int n, int bass, int16_t *u)   /* tone[3]: n of them (fewer: doubled) */
+{
+    const int h = lv.height + 12 * lv.oct;
+    int i, t = 0, best = 1 << 30, v[3], o0, o1, m, l, a0, a1, b0, b1;
+    for (i = n; i < 3; i++)                    /* fewer than three: doubled (an octave apart, below) */
         tone[i] = tone[i - n];
-    for (i = 0; i < 3; i++)                    /* the three places: Spread apart, around Height */
-        at[i] = h + (lv.spread * (i - 1)) / 2;
-    for (p = 0; p < 6; p++) {                  /* the tones to the places, as near as they go */
-        int cost = 0, v[3];
-        for (i = 0; i < 3; i++) {
-            v[i] = lv_near(tone[PERM[p][i]], at[i]);
-            cost += v[i] > at[i] ? v[i] - at[i] : at[i] - v[i];
-        }
-        if (cost < best) {
-            best = cost;
-            for (i = 0; i < 3; i++)
-                u[i] = (int16_t)v[i];
+    for (i = 0; i < n; i++) {                  /* the top: the tone nearest Height (the lower of two as near) */
+        const int x = lv_near(tone[i], h), d = lv_dist(x, h) * 2 + (x > h);
+        if (d < best) {
+            best = d;
+            t = i;
         }
     }
-    for (i = 0; i < 3; i++)                    /* over the bass */
-        while (u[i] <= bass)
-            u[i] += 12;
-    for (i = 0; i < 2; i++)                    /* rising */
-        for (j = 0; j < 2 - i; j++)
-            if (u[j + 1] < u[j]) {
-                const int16_t x = u[j];
-                u[j] = u[j + 1];
-                u[j + 1] = x;
-            }
-    for (i = 1; i < 3; i++)                    /* a doubled note an octave up */
-        while (u[i] <= u[i - 1])
-            u[i] += 12;
+    v[t] = lv_near(tone[t], h);
+    o0 = t == 0 ? 1 : 0;                       /* the other two */
+    o1 = t == 2 ? 1 : 2;
+    m = v[t] - (lv.spread + 1) / 2;            /* their places: the middle, the lowest */
+    l = v[t] - lv.spread;
+    a0 = lv_below(tone[o0], m, v[t]);          /* o0 the middle, o1 the lowest ... */
+    a1 = lv_below(tone[o1], l, a0 + 1);
+    b1 = lv_below(tone[o1], m, v[t]);          /* ... or the other way round */
+    b0 = lv_below(tone[o0], l, b1 + 1);
+    if (a1 == a0)
+        a1 -= 12;
+    if (b0 == b1)
+        b0 -= 12;
+    if (lv_dist(a0, m) + lv_dist(a1, l) <= lv_dist(b1, m) + lv_dist(b0, l)) {
+        v[o0] = a0;
+        v[o1] = a1;
+    } else {
+        v[o0] = b0;
+        v[o1] = b1;
+    }
+    for (i = 0; i < 3; i++) {                  /* over the bass */
+        while (v[i] <= bass)
+            v[i] += 12;
+        u[i] = (int16_t)v[i];
+    }
+    lv.top = (int8_t)(v[0] > v[1] ? (v[0] > v[2] ? v[0] : v[2]) : (v[1] > v[2] ? v[1] : v[2]));
 }
 
 static int lv_low(uint32_t m)                  /* the lowest key of m */
@@ -254,11 +277,22 @@ static int lv_low(uint32_t m)                  /* the lowest key of m */
         k++;
     return k;
 }
+static void lv_place(uint16_t m, int r, int b)   /* the chord's notes from its pitch classes (over r) and bass b */
+{
+    int tone[3], n = lv_tones(m, r, tone);
+    int16_t u[3];
+    lv_voice(tone, n, b, u);
+    lv.note[0] = (int16_t)b;
+    lv.note[1] = u[1];
+    lv.note[2] = u[0];
+    lv.note[3] = u[2];
+    dr_chord(0, lv.note[0] * 100, (lv.note[1] - lv.note[0]) * 100, 1);
+    dr_chord(1, lv.note[2] * 100, (lv.note[3] - lv.note[2]) * 100, 1);
+}
 static void lv_notes_qr(void)
 {
     int b, r, k;
     uint16_t pcs = 0;
-    int16_t u[3];
     if (lv.mode == LV_Q) {
         const int lo = LV_LOW + lv.root + 12 * lv.oct;
         r = (5 + lv.root) % 12;
@@ -266,7 +300,6 @@ static void lv_notes_qr(void)
         if (b > lo)
             b -= 12;
         pcs = lv_rot(lv.shape ? lv.shape : 0x091u, 12 - r);
-        lv_window(pcs, r, b, u);
         lv_qr_name(r, b % 12, (uint16_t)(pcs | 1u << r));
     } else {
         const int low = lv_low(lv.rkeys);
@@ -278,14 +311,10 @@ static void lv_notes_qr(void)
                 pcs |= (uint16_t)(1u << (5 + k) % 12);
         if (!pcs)                              /* one key: its fifth and octave */
             pcs = (uint16_t)(1u << b % 12 | 1u << (b + 7) % 12);
-        lv_window(pcs, b % 12, b, u);
-        lv_qr_name(b % 12, b % 12, (uint16_t)(pcs | 1u << b % 12));
+        r = b % 12;
+        lv_qr_name(r, r, (uint16_t)(pcs | 1u << r));
     }
-    lv.note[0] = (int16_t)b;
-    for (k = 0; k < 3; k++)
-        lv.note[k + 1] = u[k];
-    dr_chord(0, lv.note[0] * 100, (lv.note[1] - lv.note[0]) * 100, 1);
-    dr_chord(1, lv.note[2] * 100, (lv.note[3] - lv.note[2]) * 100, 1);
+    lv_place(lv_rot(pcs, r), r, b);
 }
 
 static void lv_notes(void)                     /* the chord's notes to the drones (taken up by dr_chord_go / a rest) */
@@ -294,18 +323,13 @@ static void lv_notes(void)                     /* the chord's notes to the drone
         lv_notes_qr();
         return;
     }
-    const int lo = LV_LOW + lv.root + 12 * lv.oct, up = 12 * lv.reg;
+    const int lo = LV_LOW + lv.root + 12 * lv.oct;
     int b = lv.bass >= 0 ? LV_LOW + lv.bass + 12 * lv.oct : lo;
     if (b > lo)                                /* a bass set apart goes under the chord */
         b -= 12;
     if (lv.prog && lv.pbass >= 0)              /* the progression's held bass: where it was */
         b = lv.pnote + 12 * lv.oct;
-    lv.note[0] = (int16_t)b;
-    lv.note[1] = (int16_t)(lo + 7);
-    lv.note[2] = (int16_t)(lo + 12 + lv_third(lv.smods) + up);
-    lv.note[3] = (int16_t)(lo + 12 + lv_ext(lv.smods) + up);
-    dr_chord(0, lv.note[0] * 100, (lv.note[1] - lv.note[0]) * 100, 1);
-    dr_chord(1, lv.note[2] * 100, (lv.note[3] - lv.note[2]) * 100, 1);
+    lv_place((uint16_t)(1u << lv_third(lv.smods) | 1u << 7 | 1u << lv_ext(lv.smods) % 12), (5 + lv.root) % 12, b);
 }
 static void lv_send(void)                      /* the chord sounding to the drones, as Snap says */
 {
@@ -419,7 +443,8 @@ static void pg_keys(uint32_t keys, uint32_t ch)
 
 /* THE KNOBS' PAGES (SELECT on the Live page and the progression; the keys and the chord on screen stay as they are):
  *   1 PLAY     Dark-Bright, Thickness, Motion, Space (the live macros)
- *   2 CHORDS   Snap, Height, Spread (Q and R), the chords' Keys P / Q / R (on the progression its Way, REST / HOLD)
+ *   2 CHORDS   Snap, Height (the top note), Spread (how far down the others reach), the chords' Keys P / Q / R (on the
+ *              progression its Way, REST / HOLD)
  *   3 ARP      Tempo, Division, Pattern, Length (as ARP held, from any page)
  *   4 LEAD, 5 MIX   to come
  * SELECT stops at either end (a quick turn left: PLAY); HOME on another page back to PLAY. The page is the Live
@@ -750,10 +775,17 @@ static int live_knob(int i, int32_t e)         /* a knob on a page but PLAY (PLA
             live_mode_step(e > 0 ? 1 : -1);
         return 1;
     }
-    if (!live_qr())                            /* Height and Spread: Q and R's */
-        return 1;
-    if (i == 1) {
-        v = lv.height + (int)e;
+    if (i == 1) {                              /* Height: the top to the chord's next tone up or down (none
+                                                * sounding: a semitone) */
+        v = lv.root >= 0 && lv.top ? lv.top - 12 * lv.oct : lv.height;
+        if (lv.root >= 0 && lv.top) {
+            const uint16_t pcs = (uint16_t)(1u << lv.note[1] % 12 | 1u << lv.note[2] % 12 | 1u << lv.note[3] % 12);
+            int k = e > 0 ? 1 : -1;
+            v += k;
+            while (!(pcs >> ((v + 12 * lv.oct) % 12 + 12) % 12 & 1u))
+                v += k;
+        } else
+            v += (int)e;
         lv.height = (int8_t)(v < LV_H_LO ? LV_H_LO : v > LV_H_HI ? LV_H_HI : v);
     } else {
         v = lv.spread + (int)e;
@@ -768,7 +800,7 @@ static int live_knob(int i, int32_t e)         /* a knob on a page but PLAY (PLA
 static uint32_t live_sig(void)                 /* what the knobs' cards show of the page */
 {
     return (uint32_t)(uint8_t)lv.height | (uint32_t)(uint8_t)lv.spread << 8 | (uint32_t)lv.mode << 16 |
-           (uint32_t)lv.prog << 18 | (uint32_t)lv.hold << 19 | (uint32_t)lv.page << 20 |
+           (uint32_t)lv.prog << 18 | (uint32_t)lv.hold << 19 | (uint32_t)(uint8_t)lv.top << 7 | (uint32_t)lv.page << 20 |
            (uint32_t)(dr_ext_spb > 0.0f) << 23 | ((uint32_t)lv.snap << 24 ^
            ((uint32_t)lv.abpm | (uint32_t)lv.adiv << 8 | (uint32_t)lv.apat << 12 | (uint32_t)lv.alen << 16) * 2654435761u);
 }
@@ -780,6 +812,14 @@ static const char *const KP_CARD[KP_N][4] = {{"", "", "", ""}, {"Snap", "Height"
                                              {"Tempo", "Division", "Pattern", "Length"},
                                              {"Sound", "Glide", "Vibrato", "Press"}, {"Drones", "Pad", "Lead", "Arp"}};
 static const char *const ARP_PAT_CARD[DR_ARP_NPAT] = {"Up", "Up", "Down", "Down", "Up-dn", "Up-dn", "Rand", "Rand"};
+static const char *lv_top_name(void)           /* the top note's place in the chord: "3rd on top" */
+{
+    static const char *const ON[12] = {"root on top", "b9 on top", "9th on top", "b3 on top", "3rd on top",
+                                       "4th on top", "b5 on top", "5th on top", "#5 on top", "6th on top",
+                                       "b7 on top", "7th on top"};
+    const int r = live_qr() ? lv.croot : (5 + lv.root) % 12;
+    return ON[((lv.top - r) % 12 + 12) % 12];
+}
 static void lk_live_card(int i, int32_t x, int32_t cx, int on)
 {
     static const char *const KEYS_SUB[LV_NMODE] = {"roots", "shape", "keyboard"};
@@ -800,21 +840,14 @@ static void lk_live_card(int i, int32_t x, int32_t cx, int on)
         frac = lv.snap;
         break;
     case KP_CHORDS * 4 + 1:
-        if ((dim = !live_qr()) != 0) {         /* (P: the keys and OCT place the tones) */
-            scopy(t, "-");
-            sub = "Q and R";
-            break;
+        {                                      /* the top note sounding, and which of the chord's tones it is */
+            const int top = lv.root >= 0 && lv.top ? lv.top : lv.height + 12 * lv.oct;
+            scopy(t, LV_PC[top % 12]);
+            itoa_u((uint32_t)(top / 12 - 1), lv_end(t));
+            sub = lv.root >= 0 && lv.top ? lv_top_name() : "top note";
         }
-        scopy(t, LV_PC[lv.height % 12]);
-        itoa_u((uint32_t)(lv.height / 12 - 1), lv_end(t));
-        sub = "middle";
         break;
     case KP_CHORDS * 4 + 2:
-        if ((dim = !live_qr()) != 0) {
-            scopy(t, "-");
-            sub = "Q and R";
-            break;
-        }
         itoa_u((uint32_t)lv.spread, t);
         sub = "semis";
         break;
@@ -911,11 +944,8 @@ static void live_keep(void)
     mark_dirty();
 }
 
-static void live_run(void)                     /* each frame: the lead's pressure; Dark-Bright's octave for the
-                                                * upper tones */
+static void live_run(void)                     /* each frame: the lead's pressure; the settings kept */
 {
-    const int d = proj.par[P_DARK];
-    int r;
     if (lv.prog && lv.nlead) {                 /* the lead's key pressed harder: brighter, more vibrato */
         const int p = plat_pressure((uint32_t)lv.lead[lv.nlead - 1]);
         if (p >= 0 && (p - lv.lpress > 1 || lv.lpress - p > 1)) {
@@ -925,14 +955,6 @@ static void live_run(void)                     /* each frame: the lead's pressur
     } else
         lv.lpress = 0;                         /* (let go, the engine's back at 0) */
     live_keep();
-    if (live_qr())                             /* (Q and R: Height places the tones) */
-        return;
-    r = d >= 50 ? 1 : d <= -50 ? -1 : (lv.reg > 0 && d > 40) || (lv.reg < 0 && d < -40) ? lv.reg : 0;
-    if (r != lv.reg) {
-        lv.reg = (int8_t)r;
-        if (lv.root >= 0 && !lv.rest)
-            lv_send();
-    }
 }
 
 static int live_led(int k)                     /* a key's light on the page, 0..255; -1 not the page's */
@@ -973,19 +995,33 @@ static void lk_pic_live(void)
         scopy(t, "no chord");
     text_c(120, 14, lv.root >= 0 && text_w(&FONT_L, t) <= 220 ? &FONT_L : &LK_F_SOUND, t,
            lv.root >= 0 && !lv.rest ? LK_WHITE : LK_LABEL);
-    if (lv.root >= 0) {
-        static const char *const ROLE[4] = {"bass", "5th", "3rd", "top"};
+    if (lv.root >= 0) {                        /* the bass, then the three over it low to high, each named by its
+                                                * place in the chord */
+        static const char *const ROLE[12] = {"root", "b9", "9th", "b3", "3rd", "4th", "b5", "5th", "#5", "6th", "b7", "7th"};
+        const int r = live_qr() ? lv.croot : (5 + lv.root) % 12;
+        uint8_t at[4] = {0, 1, 2, 3}, c;
+        for (i = 1; i < 3; i++) {              /* the upper three by height */
+            int j;
+            for (j = 1; j < 4 - i; j++)
+                if (lv.note[at[j]] > lv.note[at[j + 1]]) {
+                    c = at[j];
+                    at[j] = at[j + 1];
+                    at[j + 1] = c;
+                }
+        }
         for (i = 0; i < 4; i++) {
-            /* Thickness's fades (drone.c LIVE_MV): the top 0 .. -35, the 3rd -35 .. -70, the 5th -70 .. -100 */
-            const float lo = i == 3 ? 0.0f : i == 2 ? 0.35f : 0.70f, hi = i == 3 ? 0.35f : i == 2 ? 0.70f : 1.0f;
-            const float left = i == 0 || th >= -lo ? 1.0f : 1.0f - fm_clampf((-th - lo) / (hi - lo), 0.0f, 1.0f);
+            /* Thickness's fades (drone.c LIVE_MV), by the drones' voices: drone II's partner (u[2], the tone needed
+             * least) 0 .. -35, its main (the one kept first) -35 .. -70, drone I's partner -70 .. -100 */
+            const int v = at[i];
+            const float lo = v == 3 ? 0.0f : v == 2 ? 0.35f : 0.70f, hi = v == 3 ? 0.35f : v == 2 ? 0.70f : 1.0f;
+            const float left = v == 0 || th >= -lo ? 1.0f : 1.0f - fm_clampf((-th - lo) / (hi - lo), 0.0f, 1.0f);
             const int32_t cx = 30 + 60 * i;
-            const int n = lv.note[i];
+            const int n = lv.note[v];
             char nn[8];
             scopy(nn, LV_PC[n % 12]);
             itoa_u((uint32_t)(n / 12 - 1), lv_end(nn));
             text_c(cx, 56, &FONT_T22, nn, lk_mix(0x5A566Bu, 0xFFFFFFu, left));
-            text_c(cx, 80, &LK_F_SMALL, i && live_qr() ? LV_IV[(n - lv.croot + 120) % 12] : ROLE[i], LK_LABEL);
+            text_c(cx, 80, &LK_F_SMALL, v ? ROLE[(n - r + 120) % 12] : "bass", LK_LABEL);
         }
     }
     {   /* the line under: what the next chord takes, the bass, the octave, Snap */

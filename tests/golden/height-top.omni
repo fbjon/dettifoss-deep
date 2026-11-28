@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the voicing on the Live page: C A F G C (Height C5: the top stays
+# near), then CHORDS' Height a detent up (E5), up (G5), three down (G4), Spread 0 (close) and 24. Not a test of its own.
+notips
+tap PLAY
+wait 1500
+wav height.wav
+tapkey 7
+wait 2500
+shot c.png
+tapkey 4
+wait 2500
+shot am.png
+tapkey 0
+wait 2500
+shot f.png
+tapkey 2
+wait 2500
+shot g.png
+tapkey 7
+wait 2500
+shot c2.png
+kpage 1
+turn K2 1 400
+wait 2000
+shot c-up1.png
+turn K2 1 400
+wait 2000
+shot c-up2.png
+turn K2 -3 400
+wait 2000
+shot c-down1.png
+turn K3 -12 60
+wait 2000
+shot c-close.png
+turn K3 24 60
+wait 2500
+shot c-wide.png
+wavstop
