@@ -6,7 +6,9 @@ notips
 tap PLAY
 wait 1500
 tap HOME
-turn ALGO 80
+kpage 1
+turn K1 80
+kpage 0
 wait 600
 tapkey 0
 wait 1500

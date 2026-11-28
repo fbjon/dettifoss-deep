@@ -424,7 +424,7 @@ header nav { z-index: 6; }
         <li>Tap <kbd>PLAY</kbd> and the drone fades in</li>
         <li>Tap a root, F3 to E4; the black keys above add minor, sus, 7 and the rest to the next chord</li>
         <li>Tap <kbd>SEL</kbd> to switch the way chords are played: P roots and modifiers, Q a root and a shape, R the whole keyboard. The labels on the panel follow</li>
-        <li>In Q and R, KNOB 1 Height and KNOB 2 Spread place the chord's notes; ALGORITHM is Snap, how a change lands</li>
+        <li>Turn SELECT for the knobs' pages: Play (Dark, Thick, Motion, Space), Chords (Snap, how a change lands; in Q and R Height and Spread, which place the chord's notes), Arp. ALGORITHM is Motion speed</li>
         <li>Tap <kbd>HOME</kbd> for the progression: F3 the next chord, F#3 the one before. <kbd>SEL</kbd> + <kbd>HOME</kbd>: the sound's pages (Niagara Drift's)</li>
       </ol>
     </div>
@@ -455,7 +455,7 @@ header nav { z-index: 6; }
       <div><dt>SAVE · SEL (hold)</dt><dd><kbd>Return</kbd> · <kbd>C</kbd></dd></div>
       <div><dt>HOME · EDIT</dt><dd><kbd>Esc</kbd> · <kbd>V</kbd></dd></div>
       <div><dt>OCT− · OCT+</dt><dd><kbd>Z</kbd> · <kbd>X</kbd></dd></div>
-      <div><dt>LFO rate · Snap</dt><dd><kbd>↑</kbd><kbd>↓</kbd> · <kbd>←</kbd><kbd>→</kbd></dd></div>
+      <div><dt>SELECT · ALGORITHM</dt><dd><kbd>↑</kbd><kbd>↓</kbd> · <kbd>←</kbd><kbd>→</kbd></dd></div>
       <div><dt>Any knob</dt><dd><kbd>Tab</kbd> to it, then <kbd>↑</kbd><kbd>↓</kbd></dd></div>
       <div><dt>An FM-1 on USB</dt><dd><b>Play from your FM-1</b> (Chrome, Edge): its panel plays this one</dd></div>
     </dl>
@@ -629,10 +629,10 @@ const LIVE = [   // seg: [first white key, last, caption]: brackets over the key
   { k: ["Dark", "Thick", "Motion", "Space"], oct: ["Oct −", "Oct +"], sel: "Mode", home: "Prog",
     seg: [[0, 6, "Roots F3–E4 · tap: the chord"], [7, 14, "Modifiers, on the black keys · for the next root"], [15, 15, "Bass"]],
     key: (k) => k < 12 ? NOTE[k] : MOD_KEY[k] || (k === 26 ? "Bass" : "") },
-  { k: ["Height", "Spread", "Dark", "Thick"], oct: ["Bass", "Root"], sel: "Mode", home: "Prog",
+  { k: ["Dark", "Thick", "Motion", "Space"], oct: ["Bass", "Root"], sel: "Mode", home: "Prog",
     seg: [[0, 6, "Left hand: the root · OCT− the bass alone, OCT+ the root alone"], [7, 14, "Right hand: the shape, as over C"]],
     key: (k) => k < 12 ? NOTE[k] : k < 26 ? OVER_C[k % 12] : "" },
-  { k: ["Height", "Spread", "Dark", "Thick"], oct: ["Oct −", "Oct +"], sel: "Mode", home: "Prog",
+  { k: ["Dark", "Thick", "Motion", "Space"], oct: ["Oct −", "Oct +"], sel: "Mode", home: "Prog",
     seg: [[0, 15, "Keys held together: the chord, the lowest its bass · while one's held, tap a key in it: out"]],
     key: (k) => NOTE[k % 12], noPhys: true },
   { k: ["Dark", "Thick", "Motion", "Space"], oct: ["Oct −", "Oct +"], sel: "F3: way", home: "Chords",
@@ -646,10 +646,13 @@ LIVE.forEach((L) => {
 const physName = (k) => NOTE[k % 12] + (Math.floor((53 + k) / 12) - 1);   // key 0 F3
 let liveState = -1;
 function setJob(c, s, col) { c.job.textContent = s; c.job.style.fill = col; }
+// the Live page's knobs on its other pages (SELECT): CHORDS, ARP, LEAD, MIX
+const KPAGE = [null, ["Snap", "Height", "Spread", "Keys"], ["Tempo", "Division", "Pattern", "Length"],
+  ["Sound", "Glide", "Vibrato", "Press"], ["Drones", "Pad", "Lead", "Arp"]];
 function drawLive(st) {
   if (st === liveState) return;
   liveState = st;
-  const L = LIVE[st];
+  const L = LIVE[st & 7], kp = KPAGE[st >> 3];
   for (const b of niagBr) b.g.setAttribute("display", L ? "none" : "inline");
   LIVE.forEach((M) => M.br.forEach((b) => b.g.setAttribute("display", M === L ? "inline" : "none")));
   keys.forEach((k, i) => {
@@ -657,8 +660,10 @@ function drawLive(st) {
     k.live.textContent = L ? L.key(i) : "";
     k.phys.textContent = L && !L.noPhys ? physName(i) : "";
   });
-  for (let i = 0; i < 4; i++) setJob(knobs[`KNOB${i + 1}`], L ? L.k[i] : "", PALE);
-  setJob(knobs.ALGORITHM, L ? "Snap" : knobs.ALGORITHM.what, L ? PALE : knobs.ALGORITHM.col);
+  for (let i = 0; i < 4; i++)
+    setJob(knobs[`KNOB${i + 1}`], L ? (kp ? (i === 3 && (st & 7) === 3 && kp[3] === "Keys" ? "Way" : kp[i]) : L.k[i]) : "", PALE);
+  setJob(knobs.ALGORITHM, L ? "Motion speed" : knobs.ALGORITHM.what, L ? PALE : knobs.ALGORITHM.col);
+  setJob(knobs.SELECT, L ? "Pages" : knobs.SELECT.what, L ? PALE : knobs.SELECT.col);
   setJob(buttons["OCT-"], L ? L.oct[0] : buttons["OCT-"].what, L ? PALE : buttons["OCT-"].col);
   setJob(buttons["OCT+"], L ? L.oct[1] : buttons["OCT+"].what, L ? PALE : buttons["OCT+"].col);
   setJob(buttons.SEL, L ? L.sel : buttons.SEL.what, PALE);
@@ -692,7 +697,7 @@ const TIP = { FX: "Space: the delay's repeats and mix, the reverb's length (to I
   EDIT: "Osc: X-Wave, pulse width (again: Sub · Drive: osc mix, with SEL the sub's wave; drive); hold to peek", GLO: "Setup 1: fade, morph, scene time, sync (again: Setup 2: tuning, tune, stereo width, pressure)",
   HOME: "The Live page: chords on the keys (again: the progression); SEL + HOME: the sound's pages, Drones and Pitch", SAVE: "Save; hold it first, then tap a white key: store a scene (in banks 1 to 6)", ARP: "On the Live pages the arp: tap on / off; held, the knobs are its Tempo, Division, Pattern, Length. Elsewhere Swell: tap for its page, tap again there: on / off; hold to peek", SEQ: "Partner: interval, detune (again: Pitch moves: Shift's move, pitch glide, Wander, its scale)",
   PLAY: "Drones in / out (with SEL: drone II alone)", REC: "Motion loop: tap to record knob moves, gestures and scenes, again to loop, again to stop", "OCT-": "LFO I: tap for the next shape (with SEL: the one before)", "OCT+": "LFO II: tap for the next shape (with SEL: the one before)",
-  SELECT: "LFO rate", PRESETS: "Gesture time: how long every gesture takes, left slower, right faster", ALGORITHM: "Movement: every LFO depth together",
+  SELECT: "On the Live pages: the knobs' pages, Play, Chords, Arp, Lead, Mix. Elsewhere the LFO rate", PRESETS: "On the Live pages the presets. Elsewhere Gesture time: how long every gesture takes, left slower, right faster", ALGORITHM: "On the Live pages Motion speed, the LFO rate. Elsewhere Movement: every LFO depth together",
   KNOB1: "Drone I", KNOB2: "Drone I", KNOB3: "Drone II", KNOB4: "Drone II", MASTER: "Volume" };
 for (const [n, c] of [...Object.entries(buttons), ...Object.entries(knobs)]) if (TIP[n]) c.g.setAttribute("aria-description", TIP[n]);
 // the keys: the black ones as switches (and what they do on the LFO pages), the white ones as scenes

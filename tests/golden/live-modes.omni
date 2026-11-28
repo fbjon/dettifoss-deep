@@ -23,10 +23,14 @@ shot live-q-cm.png
 tapkey 4
 wait 2500
 shot live-q-am.png
-turn K1 12 120
+kpage 1
+turn K2 12 120
+kpage 0
 wait 1500
 shot live-q-am-high.png
-turn K2 24 80
+kpage 1
+turn K3 24 80
+kpage 0
 wait 2500
 shot live-q-am-wide.png
 key 19 down
