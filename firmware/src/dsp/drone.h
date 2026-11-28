@@ -135,7 +135,8 @@ enum {
      * times, unused since 2026-10-18, so a sound takes no more room) */
     P_DARK,                         /* DARK-BRIGHT: the filters closed (down to 2.5 octaves) or opened, the waves softer or
                                      * brighter, the sub up toward dark (made up as Age is), the reverb's tail darker
-                                     * or open */
+                                     * or open; past +30 a high-pass thins the drones (the sound's character only:
+                                     * the notes stay) */
     P_THICK,                        /* THICKNESS: down, the voices go one by one (drone II's partner, drone II, drone I's
                                      * partner) to the bass alone; up, the partners on, detuned, wider, a little drive */
     P_MOTION,                       /* MOTION: down, still (Movement, Drift, the Swell's depth to 0); up, Movement and Drift
