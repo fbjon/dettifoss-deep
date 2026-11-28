@@ -75,9 +75,10 @@ __attribute__((used, visibility("default"))) void web_master(uint32_t v) { maste
 __attribute__((used, visibility("default"))) uint32_t web_lit_buttons(void) { return lit_btn; }
 __attribute__((used, visibility("default"))) uint32_t web_lit_keys(void) { return lit_keys; }
 __attribute__((used, visibility("default"))) int web_live(void)   /* the Live page's way, 0-2 P Q R; 3 the progression;
-                                                                 * 4 another page (the panel's labels follow) */
+                                                                 * 4 another page (the panel's labels follow); its
+                                                                 * knobs' page (SELECT) x 8 */
 {
-    return ui.view != V_LIVE ? 4 : live_prog() ? 3 : live_mode();
+    return ui.view != V_LIVE ? 4 : (live_prog() ? 3 : live_mode()) | live_page() << 3;
 }
 __attribute__((used, visibility("default"))) uint32_t web_keys_lfo(void) { return sw_layer() == SW_LFO; }   /* the black keys' LFO layer */
 __attribute__((used, visibility("default"))) uint8_t *web_btn_levels(void) { return lvl_btn; }

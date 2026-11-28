@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# the same-samples check (tools/same_samples.py): the Live page's knobs' pages on SELECT over a D chord: PLAY, CHORDS
+# (Snap turned to a wash), ARP, LEAD and MIX (to come), HOME back to PLAY, CHORDS in Q, and the progression's PLAY and
+# CHORDS (its Way). Not a test of its own.
+notips
+tap PLAY
+wait 1500
+tapkey 9
+wait 1500
+shot p1-play.png
+turn SELECT 1
+wait 400
+shot p2-chords.png
+turn K1 -6
+wait 300
+shot p2-chords-snap.png
+wait 1500
+turn SELECT 1
+wait 400
+shot p3-arp.png
+turn SELECT 1
+wait 400
+shot p4-lead.png
+turn SELECT 1
+turn SELECT 3
+wait 400
+shot p5-mix.png
+tap HOME
+wait 400
+shot back-home.png
+tap SEL
+turn SELECT 1
+wait 400
+shot q-chords.png
+tap HOME
+tap HOME
+wait 2000
+shot prog-play.png
+turn SELECT 1
+wait 400
+shot prog-chords.png

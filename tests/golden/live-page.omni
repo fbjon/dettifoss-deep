@@ -34,7 +34,9 @@ shot live-fmaj7-e.png
 leds
 tapkey 26
 wait 2000
-turn ALGO 20
+kpage 1
+turn K1 20
+kpage 0
 tapkey 20
 tapkey 17
 tapkey 2

@@ -87,11 +87,18 @@ static int32_t lk_ktext_w(const felucca_font_t *f, const char *s);
 static int live_prog(void);                   /* live.c: the Live page shows the progression */
 static int live_mode(void);                   /* ... the chords' way, P Q R (0..2; -1 the progression) */
 static uint32_t live_sig(void);
+static int live_page(void);                   /* ... the knobs' page (SELECT), 0 PLAY */
+static const char *live_page_name(void);      /* ... its name ("CHORDS"), and how many */
+static int live_npage(void);
 static void lk_live_card(int i, int32_t x, int32_t cx, int on);
 /* a page's name in capitals, its number dropped when the header shows its "1/2" ("Setup 1": SETUP) */
 static void lk_page_name(int v, char *name)
 {
     int i, b;
+    if (v == V_LIVE && live_page()) {         /* another page of its knobs: "CHORDS" */
+        scopy(name, live_page_name());
+        return;
+    }
     if (v == V_LIVE && live_prog()) {
         scopy(name, "PROGRESSION");
         return;
@@ -249,7 +256,8 @@ static void lk_bar(void)
     h = hash(hash(h, (uint32_t)(gest + 1) | (uint32_t)ui.hold_from << 8 |
                          (uint32_t)(line < 0.0f ? 0xFFFu : (uint32_t)(line * 224.0f)) << 12),
              (uint32_t)(gest_pct + 1));
-    h = hash(h, (uint32_t)live_prog() | (uint32_t)live_mode() << 1);   /* (the Live page's name) */
+    h = hash(h, (uint32_t)live_prog() | (uint32_t)live_mode() << 1 | (uint32_t)live_page() << 4);   /* (the Live
+                                                                                                   * page's name) */
     if (h == ui.sig[0])
         return;
     ui.sig[0] = h;
@@ -261,6 +269,12 @@ static void lk_bar(void)
             half[2] = (char)('0' + PAGE_BTN[i].n);
             half[3] = 0;
         }
+    if (ui.view == V_LIVE) {                   /* the Live page's knobs: "2/5" */
+        half[0] = (char)('1' + live_page());
+        half[1] = '/';
+        half[2] = (char)('0' + live_npage());
+        half[3] = 0;
+    }
     if (ui.loop != L_IDLE) {                   /* "REC 1:05" (white: REC is never red), or LOOP */
         char *q = rec + 4;
         itoa_u(rec_s / 60u, q);
@@ -2785,7 +2799,7 @@ static void lk_values(void)
         int pre, mode;
         int32_t wb, ws, y;
         if (p < 0) {
-            if (ui.view == V_LIVE)             /* Q and R: Height, Spread */
+            if (ui.view == V_LIVE)             /* the Live page's other pages */
                 lk_live_card((int)i, x, cx, on);
             continue;
         }

@@ -7,20 +7,26 @@ tap PLAY
 wait 1500
 wait 600
 wav chord-snap.wav
-turn ALGO -10
+kpage 1
+turn K1 -10
+kpage 0
 tapkey 7
 wait 4000
 tapkey 13
 tapkey 4
 wait 4000
-turn ALGO 10
+kpage 1
+turn K1 10
+kpage 0
 tapkey 22
 tapkey 0
 wait 4000
 tapkey 20
 tapkey 2
 wait 4000
-turn ALGO 10
+kpage 1
+turn K1 10
+kpage 0
 tapkey 7
 wait 4000
 tapkey 13

@@ -11,6 +11,7 @@
  *   key K down|up | tapkey K     (K: 0..26 = F3..G5, or w0..w15 white keys, b0..b10 black keys)
  *   strum A B [MS]               white keys A..B pressed in turn (down then up), MS apart (default 25)
  *   turn ENC N [MS]              (ENC: SELECT ALGO PRESET K1 K2 K3 K4; N detents, MS apart, default 80)
+ *   kpage N                      the Live page's knobs on page N (0 PLAY, 1 CHORDS, 2 ARP ...) at once
  *   spin ENC N                   N detents at once, exactly N (no acceleration)
  *   master N                     MASTER pot 0..4096
  *   midi B0 B1 B2                incoming USB MIDI message (hex bytes)
@@ -672,6 +673,10 @@ int main(int argc, char **argv)
         } else if (!strcmp(cmd, "page")) {          /* page V: page V at once, in no time (the pages moved in v0.3:
                                                     * the scripts kept their timing, sample for sample) */
             set_view(atoi(a));
+        } else if (!strcmp(cmd, "kpage")) {         /* kpage N: the Live page's knobs on page N (SELECT) at once, in
+                                                    * no time (Snap moved off ALGORITHM: the scripts kept their timing) */
+            lv.page = (uint8_t)atoi(a);
+            ui.sig[0] = ui.sig[2] = 0;
         } else if (!strcmp(cmd, "spin")) {
             int e = find_name(ENC_N, NE, a);
             if (e < 0) {

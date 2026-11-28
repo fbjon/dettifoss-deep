@@ -7,7 +7,9 @@ tap PLAY
 wait 1500
 wait 300
 tap HOME
-turn ALGO 10
+kpage 1
+turn K1 10
+kpage 0
 wait 2500
 wav progression-rest.wav
 tapkey 0
