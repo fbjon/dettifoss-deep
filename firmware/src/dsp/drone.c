@@ -1738,29 +1738,38 @@ static float snap_rel(int s) { return s < DR_SNAP_LEGATO ? 1.5f : s < DR_SNAP_PA
  * the voices while the old ones release, so changes overlap. Thickness at 0 or under: no pad */
 /* THE PAD'S KINDS (fixed for now, one a Preset: dr_pad_kind): a few sections, each a wave over some of the chord's
  * tones (bit 0 the bass, 1-3 the tones over it), an octave, copies spread in pitch (cents d0 at Thickness 0 to
- * d0 + dd at 100, as semitones) and across the sides, and a level; then the pad filter's cutoff and 1 / Q */
+ * d0 + dd at 100, as semitones) and across the sides (w of the pad's spread), a level, and where on Thickness it
+ * fades in (t0 to 100; 0: from the start); then the pad filter's cutoff and 1 / Q. Every kind's bass thickens over
+ * Thickness's top half: a detuned pair on it, nearly centred, and on the saws a sine an octave under (Frej,
+ * 2026-11-27: the bass gained the least from Thickness). One copy: d0 is its detune (the sub 5 cents flat, so against
+ * a drone's own sine sub it swells slowly instead of cancelling as the phases fall) */
+#define PAD_SUB_LO 2800.0f                       /* a sub no lower than E1 (41 Hz): under it, left out */
 #define PADC_HALF (DR_PAD_N / 2)                 /* a chord's voices: one half; a change comes in on the other */
 typedef struct {
     uint8_t wave, tones, copies;
     int8_t oct;
-    float d0, dd, lvl;
+    float d0, dd, lvl, w, t0;
 } padsec_t;
 typedef struct {
-    padsec_t sec[4];
+    padsec_t sec[5];
     uint8_t n;
     float fc, k, ch;                             /* ch: the chorus's mix, 0 none */
 } padkind_t;
 static const padkind_t PAD_KIND[DR_PAD_KINDS] = {
-    /* 0: saws: the bass one, each other tone a pair */
-    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.7f}, {DR_SAW, 14, 2, 0, 0.04f, 0.08f, 1.0f}}, 2, 96.0f, 1.4f, 0.0f},
+    /* 0: saws: the bass one, each other tone a pair; over the top half a saw pair on the bass and a sine under it */
+    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.7f, 0.0f, 0.0f}, {DR_SAW, 14, 2, 0, 0.04f, 0.08f, 1.0f, 1.0f, 0.0f},
+      {DR_SAW, 1, 2, 0, 0.04f, 0.06f, 0.6f, 0.25f, 0.5f}, {DR_SINE, 1, 1, -1, -0.05f, 0.0f, 0.9f, 0.0f, 0.5f}},
+     4, 96.0f, 1.4f, 0.0f},
     /* 1: WIDE SAWS (the synthesis recipes'): four saws a tone, an octave of triangles over the tones, a sine under
-     * the bass */
-    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.5f}, {DR_SAW, 14, 4, 0, 0.06f, 0.05f, 0.45f},
-      {DR_TRI, 14, 2, 1, 0.03f, 0.02f, 0.3f}, {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.6f}}, 4, 90.0f, 1.6f, 0.5f},
+     * the bass; over the top half a saw pair on the bass */
+    {{{DR_SAW, 1, 1, 0, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f}, {DR_SAW, 14, 4, 0, 0.06f, 0.05f, 0.45f, 1.0f, 0.0f},
+      {DR_TRI, 14, 2, 1, 0.03f, 0.02f, 0.3f, 1.0f, 0.0f}, {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.6f, 0.0f, 0.0f},
+      {DR_SAW, 1, 2, 0, 0.04f, 0.06f, 0.5f, 0.25f, 0.5f}}, 5, 90.0f, 1.6f, 0.5f},
     /* 2: FELT (the recipes' felt and air, its body): warm triangles, a pair a tone, a sine under the bass, the filter
-     * low */
-    {{{DR_TRI, 1, 1, 0, 0.0f, 0.0f, 0.56f}, {DR_TRI, 14, 2, 0, 0.04f, 0.03f, 0.77f},
-      {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.56f}}, 3, 81.0f, 1.8f, 0.35f},
+     * low; over the top half a triangle pair on the bass */
+    {{{DR_TRI, 1, 1, 0, 0.0f, 0.0f, 0.56f, 0.0f, 0.0f}, {DR_TRI, 14, 2, 0, 0.04f, 0.03f, 0.77f, 1.0f, 0.0f},
+      {DR_SINE, 1, 1, -1, 0.0f, 0.0f, 0.56f, 0.0f, 0.0f}, {DR_TRI, 1, 2, 0, 0.04f, 0.06f, 0.6f, 0.25f, 0.5f}},
+     4, 81.0f, 1.8f, 0.35f},
 };
 static uint8_t padc_nv;                          /* how many voices the sounding half has */
 static void pad_voice_set(int i, int wave, float note, float pan, float lvl, float glide)   /* (from drain) glide: s */
@@ -1800,14 +1809,16 @@ static void pad_chord_set(float glide)          /* the sounding half's notes, sp
     on[3] = chs_pon[1];
     for (k = 0; k < pk->n; k++) {
         const padsec_t *q = &pk->sec[k];
-        const float det = q->d0 + q->dd * t, l = q->lvl == 1.0f ? lvl : lvl * q->lvl;
+        const float det = q->d0 + q->dd * t, f = fm_clampf((t - q->t0) / (1.0f - q->t0), 0.0f, 1.0f);
+        const float l = (q->lvl == 1.0f ? lvl : lvl * q->lvl) * (q->t0 > 0.0f ? f : 1.0f);
         for (i = 0; i < 4; i++) {
             if (!(q->tones >> i & 1u))
                 continue;
+            const float nt = tone[i] + (float)(12 * q->oct);
+            const int heard = on[i] && (q->oct >= 0 || nt * 100.0f >= PAD_SUB_LO);
             for (c = 0; c < q->copies && n < PADC_HALF; c++, n++) {
                 const float o = q->copies > 1 ? (float)(2 * c) / (float)(q->copies - 1) - 1.0f : 0.0f;
-                pad_voice_set(v0 + n, q->wave, tone[i] + (float)(12 * q->oct) + o * det, o * sp, on[i] ? l : 0.0f,
-                              glide);
+                pad_voice_set(v0 + n, q->wave, nt + (q->copies > 1 ? o * det : det), o * sp * q->w, heard ? l : 0.0f, glide);
             }
         }
     }

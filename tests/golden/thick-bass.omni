@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Thickness's top half thickens the bass: on each preset (P1 DETTIFOSS, P2 WIDE, P3 FELT) the progression's steps at
+# Snap 80 while Thickness rises 0, 25, 50, 75, 100 a step (the bass pair and P1's sub fade in from 50).
+notips
+tap PLAY
+wait 1500
+tap HOME
+turn ALGO 80
+set 87 0
+wait 1200
+wav thick-bass-dettifoss.wav
+set 87 0 1500
+tapkey 0
+wait 3000
+set 87 25 1500
+tapkey 0
+wait 3000
+set 87 50 1500
+tapkey 0
+wait 3000
+set 87 75 1500
+tapkey 0
+wait 3000
+set 87 100 1500
+tapkey 0
+wait 3000
+set 87 100 1500
+tapkey 0
+wait 3000
+wavstop
+turn PRESET 1
+wait 9000
+set 87 0
+wait 1200
+wav thick-bass-wide.wav
+set 87 0 1500
+tapkey 0
+wait 3000
+set 87 25 1500
+tapkey 0
+wait 3000
+set 87 50 1500
+tapkey 0
+wait 3000
+set 87 75 1500
+tapkey 0
+wait 3000
+set 87 100 1500
+tapkey 0
+wait 3000
+set 87 100 1500
+tapkey 0
+wait 3000
+wavstop
+turn PRESET 1
+wait 9000
+set 87 0
+wait 1200
+wav thick-bass-felt.wav
+set 87 0 1500
+tapkey 0
+wait 3000
+set 87 25 1500
+tapkey 0
+wait 3000
+set 87 50 1500
+tapkey 0
+wait 3000
+set 87 75 1500
+tapkey 0
+wait 3000
+set 87 100 1500
+tapkey 0
+wait 3000
+set 87 100 1500
+tapkey 0
+wait 3000
+wavstop
